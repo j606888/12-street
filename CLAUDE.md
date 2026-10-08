@@ -30,6 +30,7 @@ pnpm db:seed             # 尺寸、價格、周邊商品、管理員
 
 ## 規範
 - 預設用 Server Component，有互動才加 `"use client"`
+- 有開 `cacheComponents`：讀 session／`cookies()`／`headers()`／`searchParams`／DB 的元件要包在 `<Suspense>` 裡，不要在 layout 最外層 await。後台每一頁都要在自己的 Suspense 裡呼叫 `requireAdmin()`（layout 不做檢查）
 - 寫入一律走 Server Actions，輸入用 Zod 驗證；每個 action 一開始就檢查身分與資料擁有權（admin action 檢查 role）。`proxy.ts` 的檢查只是第一道防線，不能取代 action 內的檢查
 - 照片和轉帳截圖**絕不經過** Vercel Function（4.5 MB 上限）：上傳用 presigned PUT 直接傳到 R2，下載／ZIP 打包用 presigned GET 在瀏覽器處理
 - 只接受 JPG/JPEG；重複判斷用瀏覽器算出的 SHA-256

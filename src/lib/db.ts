@@ -7,11 +7,10 @@ import { Pool } from "pg";
 import * as schema from "@/db/schema";
 
 function sslConfig() {
-  const caPath = process.env.DATABASE_CA_PATH;
-  if (!caPath) return undefined; // local docker Postgres
+  if (process.env.DATABASE_SSL !== "true") return undefined; // local docker Postgres
   return {
     rejectUnauthorized: true,
-    ca: readFileSync(path.resolve(process.cwd(), caPath), "utf8"),
+    ca: readFileSync(path.join(process.cwd(), "certs", "rds-global-bundle.pem"), "utf8"),
   };
 }
 

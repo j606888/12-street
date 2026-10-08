@@ -27,10 +27,12 @@ const MEMBER_TAGS = [
 ];
 
 async function main() {
-  const caPath = process.env.DATABASE_CA_PATH;
+  const useSsl = process.env.DATABASE_SSL === "true";
   const pool = new Pool({
     connectionString: process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL,
-    ssl: caPath ? { rejectUnauthorized: true, ca: readFileSync(caPath, "utf8") } : undefined,
+    ssl: useSsl
+      ? { rejectUnauthorized: true, ca: readFileSync("certs/rds-global-bundle.pem", "utf8") }
+      : undefined,
   });
   const db = drizzle(pool, { schema });
 
