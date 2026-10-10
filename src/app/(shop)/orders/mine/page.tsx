@@ -8,6 +8,7 @@ import {
   PAYMENT_STATUS_LABEL,
   paymentStatusTone,
 } from "@/lib/order-status";
+import { SignOutButton } from "@/components/sign-out-button";
 import { listMemberOrders } from "@/lib/order-view";
 import { requireUser } from "@/lib/session";
 
@@ -20,9 +21,13 @@ export default function MyOrdersPage() {
       <Suspense fallback={<p className="text-neutral-400">載入中…</p>}>
         <OrderList />
       </Suspense>
-      <Link href="/" className="text-center text-sm text-sky-700 underline">
+      <Link
+        href="/"
+        className="py-2.5 text-center text-sm text-sky-700 underline"
+      >
         回首頁
       </Link>
+      <SignOutButton className="py-2.5 text-center text-sm text-neutral-500 underline" />
     </main>
   );
 }

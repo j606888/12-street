@@ -43,15 +43,15 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
 
       <nav className="flex justify-center gap-6 text-sm text-sky-700">
         {order.userId ? (
-          <Link href="/orders/mine" className="underline">
+          <Link href="/orders/mine" className="py-2.5 underline">
             我的訂單
           </Link>
         ) : (
-          <Link href="/orders/lookup" className="underline">
+          <Link href="/orders/lookup" className="py-2.5 underline">
             查詢其他訂單
           </Link>
         )}
-        <Link href="/" className="underline">
+        <Link href="/" className="py-2.5 underline">
           回首頁
         </Link>
       </nav>

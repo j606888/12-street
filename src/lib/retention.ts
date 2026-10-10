@@ -13,3 +13,8 @@ export const LOOKUP_FAILURE_TTL_MS = DAY_MS;
 export function cutoff(now: Date, ageMs: number): Date {
   return new Date(now.getTime() - ageMs);
 }
+
+/** True once `at` is older than the 30-day retention window. */
+export function isPastRetention(at: Date): boolean {
+  return at.getTime() < Date.now() - RETENTION_MS;
+}

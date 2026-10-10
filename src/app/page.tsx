@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { SignOutButton } from "@/components/sign-out-button";
 import { getSession } from "@/lib/session";
 
 export default function Home() {
@@ -19,7 +20,10 @@ export default function Home() {
         <Suspense fallback={<div className="h-12.5" />}>
           <MemberLink />
         </Suspense>
-        <Link href="/orders/lookup" className="text-sm text-sky-700 underline">
+        <Link
+          href="/orders/lookup"
+          className="py-2.5 text-sm text-sky-700 underline"
+        >
           查詢訂單
         </Link>
       </div>
@@ -31,9 +35,12 @@ async function MemberLink() {
   const session = await getSession();
   if (session) {
     return (
-      <Link href="/orders/mine" className="rounded-lg border px-4 py-3">
-        我的訂單
-      </Link>
+      <>
+        <Link href="/orders/mine" className="rounded-lg border px-4 py-3">
+          我的訂單
+        </Link>
+        <SignOutButton />
+      </>
     );
   }
   return (

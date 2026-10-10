@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { formatBytes, formatTaipeiTime } from "@/lib/format";
 import { ORDER_STATUS_LABEL, PAYMENT_STATUS_LABEL } from "@/lib/order-status";
 import { presignGet } from "@/lib/r2";
+import { isPastRetention, RETENTION_DAYS } from "@/lib/retention";
 import { requireAdmin } from "@/lib/session";
 import { ADMIN_ORDER_STATUSES, PAYMENT_STATUSES } from "@/lib/validators/admin";
 import { safeSegment } from "@/lib/zip-names";
@@ -32,7 +33,10 @@ export default function AdminOrderPage({
 }: PageProps<"/admin/orders/[id]">) {
   return (
     <main className="grid gap-6">
-      <Link href="/admin/orders" className="text-sm text-sky-700 underline">
+      <Link
+        href="/admin/orders"
+        className="py-2.5 text-sm text-sky-700 underline"
+      >
         ← 訂單列表
       </Link>
       <Suspense fallback={<p className="text-neutral-400">載入中…</p>}>
@@ -155,6 +159,15 @@ async function AdminOrder({
               查看轉帳截圖
             </a>
           )}
+          {order.paymentMethod === "bank_transfer" &&
+            !order.transferProofKey &&
+            order.submittedAt &&
+            isPastRetention(order.submittedAt) && (
+              <p className="text-neutral-500">
+                轉帳截圖（如有上傳）已超過 {RETENTION_DAYS}{" "}
+                天保存期限，已自動刪除。
+              </p>
+            )}
           {order.paidAt && (
             <p className="text-neutral-600">
               標記已付款：{formatTaipeiTime(order.paidAt)}

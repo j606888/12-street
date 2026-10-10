@@ -21,7 +21,10 @@ export default function LookupPage() {
         </Link>
         查看。
       </p>
-      <Link href="/" className="text-center text-sm text-sky-700 underline">
+      <Link
+        href="/"
+        className="py-2.5 text-center text-sm text-sky-700 underline"
+      >
         回首頁
       </Link>
     </main>

@@ -23,6 +23,8 @@
 # misc
 .DS_Store
 *.pem
+# AWS RDS public CA bundle (not a secret), read at runtime by src/lib/db.ts
+!certs/rds-global-bundle.pem
 
 # debug
 npm-debug.log*

@@ -29,7 +29,7 @@ export function Pagination({
   return (
     <nav className="flex items-center justify-center gap-4 text-sm">
       {page > 1 ? (
-        <Link href={href(page - 1)} className="text-sky-700 underline">
+        <Link href={href(page - 1)} className="py-2.5 text-sky-700 underline">
           上一頁
         </Link>
       ) : (
@@ -39,7 +39,7 @@ export function Pagination({
         第 {page} / {pages} 頁（共 {total} 筆）
       </span>
       {page < pages ? (
-        <Link href={href(page + 1)} className="text-sky-700 underline">
+        <Link href={href(page + 1)} className="py-2.5 text-sky-700 underline">
           下一頁
         </Link>
       ) : (

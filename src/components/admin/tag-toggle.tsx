@@ -38,7 +38,7 @@ export function TagToggle({ userId, tag, on }: Props) {
       title={
         error ? "儲存失敗，請再試一次" : active ? "按一下移除" : "按一下加上"
       }
-      className={`rounded-full border px-2 py-0.5 text-xs disabled:opacity-50 ${
+      className={`rounded-full border px-3 py-1.5 text-xs disabled:opacity-50 ${
         active
           ? tagTone(tag.color)
           : "border-dashed text-neutral-400 hover:text-neutral-700"

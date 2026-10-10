@@ -50,10 +50,10 @@ async function OrderSummary({
       <OrderDetail order={order} />
 
       <nav className="flex justify-center gap-6 text-sm text-sky-700">
-        <Link href="/orders/lookup" className="underline">
+        <Link href="/orders/lookup" className="py-2.5 underline">
           查詢訂單
         </Link>
-        <Link href="/" className="underline">
+        <Link href="/" className="py-2.5 underline">
           回首頁
         </Link>
       </nav>
