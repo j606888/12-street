@@ -13,6 +13,17 @@ export const phoneSchema = z
   .transform((s) => s.replace(/[\s-]/g, ""))
   .pipe(z.string().regex(/^09\d{8}$/, "請輸入 09 開頭的 10 碼手機號碼"));
 
+/** Order number as typed by a customer: p20261010-0001 → P20261010-0001 */
+export const orderNoSchema = z
+  .string()
+  .transform((s) => s.replace(/\s/g, "").toUpperCase())
+  .pipe(z.string().regex(/^P\d{8}-\d{4,}$/, "訂單編號格式不正確"));
+
+export const lookupOrderInput = z.object({
+  orderNo: orderNoSchema,
+  phone: phoneSchema,
+});
+
 const sizeId = z.int().positive();
 const productId = z.int().positive();
 

@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { getSession } from "@/lib/session";
 
 export default function Home() {
   return (
@@ -14,10 +16,29 @@ export default function Home() {
         >
           開始下單
         </Link>
-        <Link href="/login?next=/order" className="rounded-lg border px-4 py-3">
-          LINE 會員登入
+        <Suspense fallback={<div className="h-12.5" />}>
+          <MemberLink />
+        </Suspense>
+        <Link href="/orders/lookup" className="text-sm text-sky-700 underline">
+          查詢訂單
         </Link>
       </div>
     </main>
+  );
+}
+
+async function MemberLink() {
+  const session = await getSession();
+  if (session) {
+    return (
+      <Link href="/orders/mine" className="rounded-lg border px-4 py-3">
+        我的訂單
+      </Link>
+    );
+  }
+  return (
+    <Link href="/login?next=/order" className="rounded-lg border px-4 py-3">
+      LINE 會員登入
+    </Link>
   );
 }
