@@ -61,8 +61,8 @@ const PRODUCTS = [
   {
     ...ID_PHOTO,
     code: "id-5x5",
-    name: "證件照：5cm×5cm",
-    description: "美國簽證、印度簽證（張數由店家確認）",
+    name: "證件照：5cm×5cm 4 張", // piece count is a placeholder until the owner confirms
+    description: "美國簽證、印度簽證",
     sortOrder: 6,
   },
 ];
