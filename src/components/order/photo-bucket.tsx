@@ -20,13 +20,17 @@ export function PhotoBucket({
   entries,
   notices,
   uploader,
-  withQuantity,
+  quantityUnit,
+  idPhotoSets,
 }: {
   bucket: string;
   entries: Entry[];
   notices: Notice[];
   uploader: PhotoUploader;
-  withQuantity: boolean;
+  /** Show a quantity per photo, counted in this unit (prints or ID-photo sets). */
+  quantityUnit?: "張" | "組";
+  /** Show a set selector per photo (證件照). */
+  idPhotoSets?: { id: number; name: string }[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -128,15 +132,15 @@ export function PhotoBucket({
               <span className="text-red-600">，失敗 {failed} 張</span>
             )}
           </span>
-          {withQuantity && entries.length > 1 && (
+          {quantityUnit && entries.length > 1 && (
             <span className="flex items-center gap-1">
               全部設為
               <QuantityInput
                 value={bulkQty}
                 onChange={setBulkQty}
-                label="批次張數"
+                label={`批次${quantityUnit}數`}
               />
-              張
+              {quantityUnit}
               <button
                 type="button"
                 onClick={() =>
@@ -184,15 +188,31 @@ export function PhotoBucket({
               {e.fileName}
             </p>
             <StatusLine entry={e} />
+            {idPhotoSets && (
+              <select
+                value={e.productId ?? ""}
+                onChange={(ev) =>
+                  uploader.setIdPhotoSet(e.localId, Number(ev.target.value))
+                }
+                aria-label={`${e.fileName} 證件照組合`}
+                className="w-full rounded border bg-white px-1 py-1"
+              >
+                {idPhotoSets.map((set) => (
+                  <option key={set.id} value={set.id}>
+                    {set.name.replace(/^證件照：/, "")}
+                  </option>
+                ))}
+              </select>
+            )}
             <div className="flex items-center justify-between gap-1">
-              {withQuantity ? (
+              {quantityUnit ? (
                 <span className="flex items-center gap-1">
                   <QuantityInput
                     value={e.quantity}
                     onChange={(q) => uploader.setQuantity([e.localId], q)}
-                    label={`${e.fileName} 張數`}
+                    label={`${e.fileName} ${quantityUnit}數`}
                   />
-                  張
+                  {quantityUnit}
                 </span>
               ) : (
                 <span />

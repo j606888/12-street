@@ -3,7 +3,7 @@
 export type PaymentMethod = "cash_on_pickup" | "line_money" | "bank_transfer";
 
 export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
-  cash_on_pickup: "取貨付款",
+  cash_on_pickup: "取件時付現金",
   line_money: "LINE MONEY",
   bank_transfer: "銀行轉帳",
 };
@@ -15,15 +15,17 @@ const NOT_SET = "（店家尚未設定，請洽店家）";
 
 export function PaymentDetails({ method }: { method: PaymentMethod }) {
   if (method === "cash_on_pickup") {
-    return <p>到店取件時付款即可。</p>;
+    return <p>到店取件時付現金即可。</p>;
   }
   if (method === "line_money") {
     return (
       <div className="grid gap-1">
         <p>請加店家 LINE 好友，用 LINE MONEY 轉帳付款。</p>
-        <p>
-          LINE ID：<span className="font-mono">{linePayId || NOT_SET}</span>
-        </p>
+        {(linePayId || !linePayUrl) && (
+          <p>
+            LINE ID：<span className="font-mono">{linePayId || NOT_SET}</span>
+          </p>
+        )}
         {linePayUrl && (
           <a
             href={linePayUrl}

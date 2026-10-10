@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Fragment, Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { PAYMENT_LABEL, PaymentDetails } from "@/components/payment-details";
 import { db } from "@/lib/db";
+import { groupCharges } from "@/lib/pricing";
 import { LAST_ORDER_COOKIE } from "@/lib/draft";
 import { getSession } from "@/lib/session";
 import {
@@ -59,9 +60,9 @@ async function OrderSummary({
     db
       .select({
         id: orderGroups.id,
-        code: printSizes.code,
         label: printSizes.label,
         unitPrice: orderGroups.unitPrice,
+        laminationUnitPrice: orderGroups.laminationUnitPrice,
         photoCount: count(photos.id),
         prints: sum(photos.quantity).mapWith(Number),
       })
@@ -69,7 +70,7 @@ async function OrderSummary({
       .innerJoin(printSizes, eq(printSizes.id, orderGroups.printSizeId))
       .leftJoin(photos, eq(photos.groupId, orderGroups.id))
       .where(eq(orderGroups.orderId, order.id))
-      .groupBy(orderGroups.id, printSizes.code, printSizes.label)
+      .groupBy(orderGroups.id, printSizes.label)
       .orderBy(asc(orderGroups.sortOrder)),
     db.select().from(orderItems).where(eq(orderItems.orderId, order.id)),
     db
@@ -100,25 +101,43 @@ async function OrderSummary({
         <h2 className="text-lg font-bold">訂單明細</h2>
         <table className="w-full text-sm">
           <tbody>
-            {groups.map((g) => (
-              <tr key={g.id} className="border-b">
-                <td className="py-2">
-                  {g.code}（{g.label}）
-                </td>
-                <td className="py-2 text-neutral-600">
-                  {g.photoCount} 張照片，共印 {g.prints} 張 ×{" "}
-                  {fmt(g.unitPrice ?? 0)}
-                </td>
-                <td className="py-2 text-right">
-                  {fmt((g.unitPrice ?? 0) * g.prints)}
-                </td>
-              </tr>
-            ))}
+            {groups.map((g) => {
+              const unitPrice = g.unitPrice ?? 0;
+              const c = groupCharges({
+                unitPrice,
+                laminationUnitPrice: g.laminationUnitPrice,
+                quantities: [g.prints],
+              });
+              return (
+                <Fragment key={g.id}>
+                  <tr className="border-b">
+                    <td className="py-2">{g.label}</td>
+                    <td className="py-2 text-neutral-600">
+                      {g.photoCount} 張照片，共印 {g.prints} 張 ×{" "}
+                      {fmt(unitPrice)}
+                      {c.printing > unitPrice * g.prints && "（未滿低消）"}
+                    </td>
+                    <td className="py-2 text-right">{fmt(c.printing)}</td>
+                  </tr>
+                  {g.laminationUnitPrice !== null && (
+                    <tr className="border-b">
+                      <td className="py-2 pl-4">護貝</td>
+                      <td className="py-2 text-neutral-600">
+                        {g.prints} 張 × {fmt(g.laminationUnitPrice)}
+                        {c.lamination > g.laminationUnitPrice * g.prints &&
+                          "（未滿低消）"}
+                      </td>
+                      <td className="py-2 text-right">{fmt(c.lamination)}</td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             {items.map((i) => (
               <tr key={i.id} className="border-b">
                 <td className="py-2">{i.name}</td>
                 <td className="py-2 text-neutral-600">
-                  {i.quantity} 個 × {fmt(i.unitPrice)}
+                  {i.quantity} {i.photoId ? "組" : "個"} × {fmt(i.unitPrice)}
                 </td>
                 <td className="py-2 text-right">
                   {fmt(i.unitPrice * i.quantity)}

@@ -28,13 +28,20 @@ export const printSizes = pgTable("print_sizes", {
   code: text("code").notNull().unique(), // e.g. "4R"
   label: text("label").notNull(), // e.g. "4×6"
   price: integer("price").notNull(), // NT$ per print
+  laminationPrice: integer("lamination_price").notNull().default(0), // NT$ per print (護貝)
   sortOrder: integer("sort_order").notNull().default(0),
   active: boolean("active").notNull().default(true),
 });
 
+export const productCategory = pgEnum("product_category", [
+  "addon", // 周邊商品
+  "id_photo", // 證件照 set; the customer uploads one photo per set
+]);
+
 export const products = pgTable("products", {
   id: serial("id").primaryKey(),
   code: text("code").notNull().unique(),
+  category: productCategory("category").notNull().default("addon"),
   name: text("name").notNull(),
   description: text("description"),
   price: integer("price").notNull(),
@@ -108,13 +115,15 @@ export const orderGroups = pgTable(
       .notNull()
       .references(() => printSizes.id),
     unitPrice: integer("unit_price"), // snapshot taken on submit
+    laminate: boolean("laminate").notNull().default(false), // 護貝 every print in the group
+    laminationUnitPrice: integer("lamination_unit_price"), // snapshot taken on submit
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("order_groups_order_idx").on(t.orderId)],
 );
 
-export const photoKind = pgEnum("photo_kind", ["print", "custom"]);
+export const photoKind = pgEnum("photo_kind", ["print", "custom", "id_photo"]);
 export const photoStatus = pgEnum("photo_status", ["pending", "uploaded", "deleted"]);
 
 export const photos = pgTable(
@@ -126,6 +135,8 @@ export const photos = pgTable(
       .references(() => orders.id, { onDelete: "cascade" }),
     groupId: uuid("group_id").references(() => orderGroups.id, { onDelete: "cascade" }),
     kind: photoKind("kind").notNull().default("print"),
+    // ID-photo set chosen for kind = 'id_photo' (quantity = number of sets)
+    productId: integer("product_id").references(() => products.id),
     r2Key: text("r2_key").notNull().unique(),
     fileName: text("file_name").notNull(),
     sha256: text("sha256").notNull(),
@@ -143,7 +154,7 @@ export const photos = pgTable(
   ],
 );
 
-// Add-on products (相冊、馬克杯…)
+// Ordered products: add-ons and ID-photo sets (證件照)
 export const orderItems = pgTable(
   "order_items",
   {
@@ -157,6 +168,7 @@ export const orderItems = pgTable(
     name: text("name").notNull(), // snapshot
     unitPrice: integer("unit_price").notNull(), // snapshot
     quantity: integer("quantity").notNull(),
+    photoId: uuid("photo_id").references(() => photos.id, { onDelete: "set null" }), // ID-photo source
   },
   (t) => [index("order_items_order_idx").on(t.orderId)],
 );

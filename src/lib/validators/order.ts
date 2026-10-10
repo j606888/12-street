@@ -13,10 +13,17 @@ export const phoneSchema = z
   .transform((s) => s.replace(/[\s-]/g, ""))
   .pipe(z.string().regex(/^09\d{8}$/, "請輸入 09 開頭的 10 碼手機號碼"));
 
-export const createGroupInput = z.object({ printSizeId: z.int().positive() });
-export const updateGroupSizeInput = z.object({
+const sizeId = z.int().positive();
+const productId = z.int().positive();
+
+export const createGroupInput = z.object({
+  printSizeId: sizeId,
+  laminate: z.boolean().default(false),
+});
+export const updateGroupInput = z.object({
   groupId: id,
-  printSizeId: z.int().positive(),
+  printSizeId: sizeId.optional(),
+  laminate: z.boolean().optional(),
 });
 export const groupIdInput = z.object({ groupId: id });
 export const photoIdInput = z.object({ photoId: id });
@@ -42,17 +49,26 @@ export const registerPhotosInput = z.discriminatedUnion("kind", [
     kind: z.literal("custom"),
     files: z.array(fileMeta).min(1).max(20),
   }),
+  z.object({
+    kind: z.literal("id_photo"),
+    productId,
+    files: z.array(fileMeta).min(1).max(20),
+  }),
 ]);
 
 export const confirmPhotosInput = z.object({
   photoIds: z.array(id).min(1).max(100),
 });
 
-export const savePhotoQuantitiesInput = z.object({
-  items: z
-    .array(z.object({ photoId: id, quantity }))
-    .min(1)
-    .max(1000),
+/** Quantity per photo (prints, or sets for ID photos) and, for ID photos, the chosen set. */
+const photoOption = z.object({
+  photoId: id,
+  quantity,
+  productId: productId.optional(),
+});
+
+export const savePhotoOptionsInput = z.object({
+  items: z.array(photoOption).min(1).max(1000),
 });
 
 export const transferProofUploadInput = z.object({
@@ -66,11 +82,11 @@ export const submitOrderInput = z
     contactPhone: phoneSchema,
     note: z.string().trim().max(1000).optional(),
     customNote: z.string().trim().max(2000).optional(),
-    photoQuantities: z.array(z.object({ photoId: id, quantity })).max(1000),
+    photoOptions: z.array(photoOption).max(1000),
     items: z
       .array(
         z.object({
-          productId: z.int().positive(),
+          productId,
           quantity: z.int().min(0).max(MAX_QUANTITY),
         }),
       )

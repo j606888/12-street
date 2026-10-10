@@ -8,8 +8,8 @@ import {
   deletePhoto,
   getUploadUrl,
   registerPhotos,
-  savePhotoQuantities,
-  updateGroupSize,
+  savePhotoOptions,
+  updateGroup,
 } from "@/actions/order";
 import type { DraftView } from "@/lib/draft";
 import {
@@ -22,6 +22,7 @@ import {
 
 const MAX_CONCURRENT_UPLOADS = 3;
 export const CUSTOM_BUCKET = "custom";
+export const ID_PHOTO_BUCKET = "id_photo";
 
 export type EntryStatus =
   | "hashing" // reading file + SHA-256 in the browser
@@ -35,8 +36,9 @@ export type EntryStatus =
 
 export type Entry = {
   localId: string;
-  bucket: string; // group key, or CUSTOM_BUCKET
+  bucket: string; // group key, CUSTOM_BUCKET or ID_PHOTO_BUCKET
   photoId?: string;
+  productId?: number; // ID-photo set (ID_PHOTO_BUCKET only)
   fileName: string;
   size: number;
   sha256?: string;
@@ -49,7 +51,14 @@ export type Entry = {
   uploadUrl?: string;
 };
 
-export type Group = { key: string; serverId?: string; printSizeId: number };
+export type Group = {
+  key: string;
+  serverId?: string;
+  printSizeId: number;
+  laminate: boolean;
+};
+
+type PhotoOption = { quantity: number; productId?: number };
 
 export type Notice = { bucket: string; message: string };
 
@@ -74,15 +83,18 @@ function entriesFromDraft(draft: DraftView | null): {
       status: p.status === "uploaded" ? "uploaded" : "missing",
       progress: p.status === "uploaded" ? 1 : 0,
       previewUrl: p.thumbUrl ?? undefined,
+      productId: p.productId ?? undefined,
     });
   const groups = draft.groups.map((g) => ({
     key: g.id,
     serverId: g.id,
     printSizeId: g.printSizeId,
+    laminate: g.laminate,
   }));
   const entries = [
     ...draft.groups.flatMap((g) => g.photos.map(toEntry(g.id))),
     ...draft.customPhotos.map(toEntry(CUSTOM_BUCKET)),
+    ...draft.idPhotos.map(toEntry(ID_PHOTO_BUCKET)),
   ];
   return { groups, entries };
 }
@@ -90,11 +102,16 @@ function entriesFromDraft(draft: DraftView | null): {
 export function usePhotoUploader(
   draft: DraftView | null,
   defaultSizeId: number,
+  defaultIdPhotoSetId: number | undefined,
 ) {
   const [initial] = useState(() => {
     const restored = entriesFromDraft(draft);
     if (!restored.groups.length)
-      restored.groups.push({ key: newLocalId(), printSizeId: defaultSizeId });
+      restored.groups.push({
+        key: newLocalId(),
+        printSizeId: defaultSizeId,
+        laminate: false,
+      });
     return restored;
   });
   const [groups, setGroups] = useState<Group[]>(initial.groups);
@@ -113,7 +130,7 @@ export function usePhotoUploader(
   const groupIdPromises = useRef(new Map<string, Promise<string>>());
   const confirmQueue = useRef<string[]>([]);
   const confirming = useRef(false);
-  const dirtyQuantities = useRef(new Map<string, number>());
+  const dirtyOptions = useRef(new Map<string, PhotoOption>()); // photoId → option
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const patch = useCallback((localId: string, p: Partial<Entry>) => {
@@ -125,6 +142,19 @@ export function usePhotoUploader(
     setEntries((list) =>
       list.map((e) => (e.photoId === photoId ? { ...e, ...p } : e)),
     );
+  }, []);
+
+  const markDirty = useCallback((photoId: string, option: PhotoOption) => {
+    dirtyOptions.current.set(photoId, option);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const items = [...dirtyOptions.current].map(([id, o]) => ({
+        photoId: id,
+        ...o,
+      }));
+      dirtyOptions.current.clear();
+      if (items.length) void savePhotoOptions({ items }).catch(() => undefined); // re-sent on submit
+    }, 1000);
   }, []);
 
   // ---- Confirm: batch whatever finished while the previous call was running ----
@@ -220,7 +250,10 @@ export function usePhotoUploader(
     if (group?.serverId) return Promise.resolve(group.serverId);
     let p = groupIdPromises.current.get(key);
     if (!p) {
-      p = createGroup({ printSizeId: group?.printSizeId }).then((res) => {
+      p = createGroup({
+        printSizeId: group?.printSizeId,
+        laminate: group?.laminate,
+      }).then((res) => {
         if (!res.ok) {
           groupIdPromises.current.delete(key);
           throw new Error(res.error);
@@ -236,20 +269,26 @@ export function usePhotoUploader(
   }, []);
 
   const addGroup = useCallback((printSizeId: number) => {
-    setGroups((gs) => [...gs, { key: newLocalId(), printSizeId }]);
+    setGroups((gs) => [
+      ...gs,
+      { key: newLocalId(), printSizeId, laminate: false },
+    ]);
   }, []);
 
-  const changeGroupSize = useCallback(
-    async (key: string, printSizeId: number) => {
+  const updateGroupOptions = useCallback(
+    async (
+      key: string,
+      change: Partial<Pick<Group, "printSizeId" | "laminate">>,
+    ) => {
       setGroups((gs) =>
-        gs.map((g) => (g.key === key ? { ...g, printSizeId } : g)),
+        gs.map((g) => (g.key === key ? { ...g, ...change } : g)),
       );
       const group = groupsRef.current.find((g) => g.key === key);
-      // A group still being created picks up the new size via a follow-up update
+      // A group still being created picks up the change via a follow-up update
       const serverId =
         group?.serverId ??
         (await groupIdPromises.current.get(key)?.catch(() => undefined));
-      if (serverId) await updateGroupSize({ groupId: serverId, printSizeId });
+      if (serverId) await updateGroup({ groupId: serverId, ...change });
     },
     [],
   );
@@ -280,27 +319,42 @@ export function usePhotoUploader(
           size: e.size,
           sha256: e.sha256!,
         }));
+        const registeredSetId = batch[0].productId ?? defaultIdPhotoSetId;
         const res =
           bucket === CUSTOM_BUCKET
             ? await registerPhotos({ kind: "custom", files })
-            : await registerPhotos({
-                kind: "print",
-                groupId: await ensureGroupId(bucket),
-                files,
-              });
+            : bucket === ID_PHOTO_BUCKET
+              ? await registerPhotos({
+                  kind: "id_photo",
+                  productId: registeredSetId,
+                  files,
+                })
+              : await registerPhotos({
+                  kind: "print",
+                  groupId: await ensureGroupId(bucket),
+                  files,
+                });
         if (!res.ok) throw new Error(res.error);
         res.uploads.forEach((u, i) => {
-          const stillThere = entriesRef.current.some(
+          const current = entriesRef.current.find(
             (x) => x.localId === batch[i].localId,
           );
           // Removed while registering: drop the server row so it can't block submit
-          if (!stillThere) void deletePhoto({ photoId: u.photoId });
-          else
-            patch(batch[i].localId, {
-              photoId: u.photoId,
-              uploadUrl: u.uploadUrl,
-              status: "queued",
+          if (!current) return void deletePhoto({ photoId: u.photoId });
+          patch(current.localId, {
+            photoId: u.photoId,
+            uploadUrl: u.uploadUrl,
+            status: "queued",
+          });
+          // Changed before the row existed: save it now
+          const changedSet =
+            bucket === ID_PHOTO_BUCKET && current.productId !== registeredSetId;
+          if (current.quantity !== 1 || changedSet) {
+            markDirty(u.photoId, {
+              quantity: current.quantity,
+              productId: current.productId,
             });
+          }
         });
       } catch (err) {
         const message =
@@ -309,7 +363,7 @@ export function usePhotoUploader(
           patch(e.localId, { status: "failed", error: message });
       }
     },
-    [patch, ensureGroupId],
+    [patch, ensureGroupId, markDirty, defaultIdPhotoSetId],
   );
 
   const addFiles = useCallback(
@@ -330,6 +384,8 @@ export function usePhotoUploader(
           quantity: 1,
           status: "hashing",
           progress: 0,
+          productId:
+            bucket === ID_PHOTO_BUCKET ? defaultIdPhotoSetId : undefined,
           file,
           previewUrl: URL.createObjectURL(file),
         });
@@ -404,7 +460,7 @@ export function usePhotoUploader(
         await register(bucket, remaining.slice(i, i + 100));
       }
     },
-    [patch, register],
+    [patch, register, defaultIdPhotoSetId],
   );
 
   const retry = useCallback(
@@ -437,31 +493,33 @@ export function usePhotoUploader(
     if (e.photoId) await deletePhoto({ photoId: e.photoId });
   }, []);
 
-  // ---- Quantities: saved to the draft in the background (debounced) ----
-  const flushQuantities = useCallback(async () => {
-    if (!dirtyQuantities.current.size) return;
-    const items = [...dirtyQuantities.current].map(([photoId, quantity]) => ({
-      photoId,
-      quantity,
-    }));
-    dirtyQuantities.current.clear();
-    await savePhotoQuantities({ items }).catch(() => undefined); // re-sent on submit anyway
-  }, []);
-
-  const setQuantity = useCallback(
-    (localIds: string[], quantity: number) => {
+  // ---- Quantities / ID-photo sets: saved to the draft in the background (debounced) ----
+  const changeEntries = useCallback(
+    (localIds: string[], change: Partial<PhotoOption>) => {
       const ids = new Set(localIds);
       setEntries((list) =>
-        list.map((e) => (ids.has(e.localId) ? { ...e, quantity } : e)),
+        list.map((e) => (ids.has(e.localId) ? { ...e, ...change } : e)),
       );
       for (const e of entriesRef.current) {
-        if (ids.has(e.localId) && e.photoId)
-          dirtyQuantities.current.set(e.photoId, quantity);
+        if (!ids.has(e.localId) || !e.photoId) continue;
+        markDirty(e.photoId, {
+          quantity: change.quantity ?? e.quantity,
+          productId: change.productId ?? e.productId,
+        });
       }
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => void flushQuantities(), 1000);
     },
-    [flushQuantities],
+    [markDirty],
+  );
+
+  const setQuantity = useCallback(
+    (localIds: string[], quantity: number) =>
+      changeEntries(localIds, { quantity }),
+    [changeEntries],
+  );
+  const setIdPhotoSet = useCallback(
+    (localId: string, productId: number) =>
+      changeEntries([localId], { productId }),
+    [changeEntries],
   );
 
   const dismissNotices = useCallback((bucket: string) => {
@@ -473,12 +531,13 @@ export function usePhotoUploader(
     entries,
     notices,
     addGroup,
-    changeGroupSize,
+    updateGroupOptions,
     removeGroup,
     addFiles,
     retry,
     remove,
     setQuantity,
+    setIdPhotoSet,
     dismissNotices,
   };
 }

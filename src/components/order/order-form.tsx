@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Fragment, useState, useTransition } from "react";
 import Link from "next/link";
 import { getTransferProofUploadUrl, submitOrder } from "@/actions/order";
 import {
@@ -9,11 +9,15 @@ import {
   type PaymentMethod,
 } from "@/components/payment-details";
 import type { Catalog, DraftView } from "@/lib/draft";
-import { groupSubtotal, itemSubtotal } from "@/lib/pricing";
+import { groupCharges, itemSubtotal, MIN_GROUP_CHARGE } from "@/lib/pricing";
 import { MAX_PROOF_BYTES, phoneSchema } from "@/lib/validators/order";
 import { PhotoBucket, QuantityInput } from "./photo-bucket";
 import { putFile } from "./upload-utils";
-import { CUSTOM_BUCKET, usePhotoUploader } from "./use-photo-uploader";
+import {
+  CUSTOM_BUCKET,
+  ID_PHOTO_BUCKET,
+  usePhotoUploader,
+} from "./use-photo-uploader";
 
 type Member = { name: string; phone: string | null } | null;
 
@@ -25,6 +29,14 @@ type Proof =
 
 const fmt = (n: number) => `NT$ ${n.toLocaleString("zh-TW")}`;
 
+// From the shop owner's 證件照 sheet (docs/owner-pricing.md)
+const ID_PHOTO_SIZES = [
+  ["5cm × 5cm", "美國簽證、印度簽證"],
+  ["一般兩吋", "學生證、兵役體檢、履歷表、落地簽證、健保卡、國際駕照"],
+  ["大頭兩吋", "身分證、護照、英／泰／馬／菲簽證、外僑居留證"],
+  ["一吋", "駕照、殘障手冊"],
+] as const;
+
 export function OrderForm({
   catalog,
   draft,
@@ -34,7 +46,11 @@ export function OrderForm({
   draft: DraftView | null;
   member: Member;
 }) {
-  const uploader = usePhotoUploader(draft, catalog.sizes[0]?.id ?? 0);
+  const uploader = usePhotoUploader(
+    draft,
+    catalog.sizes[0]?.id ?? 0,
+    catalog.idPhotoSets[0]?.id,
+  );
   const { groups, entries, notices } = uploader;
 
   const [itemQty, setItemQty] = useState<Record<number, number>>({});
@@ -56,17 +72,38 @@ export function OrderForm({
   const groupLines = groups.map((g, i) => {
     const size = sizeById.get(g.printSizeId);
     const photos = entries.filter((e) => e.bucket === g.key);
-    const quantities = photos.map((e) => e.quantity);
+    const unitPrice = size?.price ?? 0;
+    const laminationUnitPrice = g.laminate
+      ? (size?.laminationPrice ?? 0)
+      : null;
+    const charges = groupCharges({
+      unitPrice,
+      laminationUnitPrice,
+      quantities: photos.map((e) => e.quantity),
+    });
     return {
       key: g.key,
-      title: `第 ${i + 1} 組 ${size ? `${size.code}（${size.label}）` : ""}`,
+      title: `第 ${i + 1} 組 ${size?.label ?? ""}`,
       photos: photos.length,
-      prints: quantities.reduce((a, b) => a + b, 0),
-      subtotal: size ? groupSubtotal({ unitPrice: size.price, quantities }) : 0,
-      unitPrice: size?.price ?? 0,
+      unitPrice,
+      laminationUnitPrice,
+      ...charges,
     };
   });
-  const itemLines = catalog.products
+  const idPhotoEntries = entries.filter((e) => e.bucket === ID_PHOTO_BUCKET);
+  const idPhotoLines = catalog.idPhotoSets
+    .map((set) => {
+      const sets = idPhotoEntries
+        .filter((e) => e.productId === set.id)
+        .reduce((n, e) => n + e.quantity, 0);
+      return {
+        ...set,
+        sets,
+        subtotal: itemSubtotal({ unitPrice: set.price, quantity: sets }),
+      };
+    })
+    .filter((l) => l.sets > 0);
+  const itemLines = catalog.addons
     .filter((p) => (itemQty[p.id] ?? 0) > 0)
     .map((p) => ({
       ...p,
@@ -74,8 +111,11 @@ export function OrderForm({
       subtotal: itemSubtotal({ unitPrice: p.price, quantity: itemQty[p.id] }),
     }));
   const total =
-    groupLines.reduce((s, g) => s + g.subtotal, 0) +
+    groupLines.reduce((s, g) => s + g.total, 0) +
+    idPhotoLines.reduce((s, l) => s + l.subtotal, 0) +
     itemLines.reduce((s, i) => s + i.subtotal, 0);
+  let sectionNo = 0;
+  const nextSection = () => ++sectionNo;
 
   const customEntries = entries.filter((e) => e.bucket === CUSTOM_BUCKET);
   const notReady = entries.filter((e) => e.status !== "uploaded").length;
@@ -135,10 +175,14 @@ export function OrderForm({
         contactPhone,
         note: note || undefined,
         customNote: customNote || undefined,
-        photoQuantities: entries
+        photoOptions: entries
           .filter((e) => e.photoId && e.bucket !== CUSTOM_BUCKET)
-          .map((e) => ({ photoId: e.photoId, quantity: e.quantity })),
-        items: catalog.products.map((p) => ({
+          .map((e) => ({
+            photoId: e.photoId,
+            quantity: e.quantity,
+            productId: e.productId,
+          })),
+        items: catalog.addons.map((p) => ({
           productId: p.id,
           quantity: itemQty[p.id] ?? 0,
         })),
@@ -173,9 +217,10 @@ export function OrderForm({
         )}
       </p>
 
-      <Section n={1} title="上傳沖印照片">
+      <Section n={nextSection()} title="上傳沖印照片">
         <p className="text-sm text-neutral-600">
-          同一組照片印同一種尺寸；要印不同尺寸請再新增一組。
+          同一組照片印同一種尺寸、同樣是否護貝；要印不同尺寸請再新增一組。每組沖洗（及護貝）費用未滿{" "}
+          {fmt(MIN_GROUP_CHARGE)} 以 {fmt(MIN_GROUP_CHARGE)} 計。
         </p>
         {groups.map((g, i) => (
           <div
@@ -188,16 +233,31 @@ export function OrderForm({
                 <select
                   value={g.printSizeId}
                   onChange={(e) =>
-                    void uploader.changeGroupSize(g.key, Number(e.target.value))
+                    void uploader.updateGroupOptions(g.key, {
+                      printSizeId: Number(e.target.value),
+                    })
                   }
                   className="rounded border bg-white px-2 py-1"
                 >
                   {catalog.sizes.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.code}（{s.label}）每張 {fmt(s.price)}
+                      {s.label} 每張 {fmt(s.price)}
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={g.laminate}
+                  onChange={(e) =>
+                    void uploader.updateGroupOptions(g.key, {
+                      laminate: e.target.checked,
+                    })
+                  }
+                />
+                護貝（每張 +
+                {fmt(sizeById.get(g.printSizeId)?.laminationPrice ?? 0)}）
               </label>
               {confirmDeleteGroup === g.key ? (
                 <span className="flex gap-2 text-sm">
@@ -235,7 +295,7 @@ export function OrderForm({
               entries={entries.filter((e) => e.bucket === g.key)}
               notices={notices.filter((n) => n.bucket === g.key)}
               uploader={uploader}
-              withQuantity
+              quantityUnit="張"
             />
           </div>
         ))}
@@ -248,47 +308,80 @@ export function OrderForm({
         </button>
       </Section>
 
-      <Section n={2} title="加購周邊商品（選填）">
-        <ul className="grid gap-2">
-          {catalog.products.map((p) => (
-            <li
-              key={p.id}
-              className="flex items-center justify-between gap-3 rounded-lg border p-3"
-            >
-              <div>
-                <p className="font-medium">
-                  {p.name}{" "}
-                  <span className="text-neutral-600">{fmt(p.price)}</span>
-                </p>
-                {p.description && (
-                  <p className="text-sm text-neutral-500">{p.description}</p>
-                )}
-              </div>
-              <span className="flex items-center gap-1 text-sm">
-                <QuantityInput
-                  value={itemQty[p.id] ?? 0}
-                  min={0}
-                  onChange={(q) => setItemQty((m) => ({ ...m, [p.id]: q }))}
-                  label={`${p.name} 數量`}
-                />
-                個
-              </span>
-            </li>
-          ))}
-        </ul>
-      </Section>
+      {catalog.idPhotoSets.length > 0 && (
+        <Section n={nextSection()} title="證件照（選填）">
+          <p className="text-sm text-neutral-600">
+            每組 {fmt(catalog.idPhotoSets[0].price)}
+            。每張照片選一種組合；同一張照片要多印幾組，就調整組數。
+          </p>
+          <details className="rounded-lg border p-3 text-sm">
+            <summary className="cursor-pointer font-medium">
+              證件照尺寸與常見用途
+            </summary>
+            <table className="mt-2 w-full">
+              <tbody>
+                {ID_PHOTO_SIZES.map(([size, uses]) => (
+                  <tr key={size} className="border-t">
+                    <td className="py-1.5 pr-3 whitespace-nowrap">{size}</td>
+                    <td className="py-1.5 text-neutral-600">{uses}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+          <PhotoBucket
+            bucket={ID_PHOTO_BUCKET}
+            entries={idPhotoEntries}
+            notices={notices.filter((n) => n.bucket === ID_PHOTO_BUCKET)}
+            uploader={uploader}
+            quantityUnit="組"
+            idPhotoSets={catalog.idPhotoSets}
+          />
+        </Section>
+      )}
 
-      <Section n={3} title="客製化製作（選填）">
+      {catalog.addons.length > 0 && (
+        <Section n={nextSection()} title="加購周邊商品（選填）">
+          <ul className="grid gap-2">
+            {catalog.addons.map((p) => (
+              <li
+                key={p.id}
+                className="flex items-center justify-between gap-3 rounded-lg border p-3"
+              >
+                <div>
+                  <p className="font-medium">
+                    {p.name}{" "}
+                    <span className="text-neutral-600">{fmt(p.price)}</span>
+                  </p>
+                  {p.description && (
+                    <p className="text-sm text-neutral-500">{p.description}</p>
+                  )}
+                </div>
+                <span className="flex items-center gap-1 text-sm">
+                  <QuantityInput
+                    value={itemQty[p.id] ?? 0}
+                    min={0}
+                    onChange={(q) => setItemQty((m) => ({ ...m, [p.id]: q }))}
+                    label={`${p.name} 數量`}
+                  />
+                  個
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+
+      <Section n={nextSection()} title="客製化製作（選填）">
         <p className="text-sm text-neutral-600">
-          需要客製化商品時，請上傳要用的照片並說明需求，店家會再透過 LINE
-          與你確認細節和報價（不含在下方總金額）。
+          相冊、馬克杯等客製化商品，請上傳要用的照片並說明需求，店家會再透過
+          LINE 與你一對一確認張數、細節和報價（不含在下方總金額）。
         </p>
         <PhotoBucket
           bucket={CUSTOM_BUCKET}
           entries={customEntries}
           notices={notices.filter((n) => n.bucket === CUSTOM_BUCKET)}
           uploader={uploader}
-          withQuantity={false}
         />
         <textarea
           value={customNote}
@@ -301,7 +394,7 @@ export function OrderForm({
         />
       </Section>
 
-      <Section n={4} title="聯絡資料">
+      <Section n={nextSection()} title="聯絡資料">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="姓名" required>
             <input
@@ -335,7 +428,7 @@ export function OrderForm({
         </Field>
       </Section>
 
-      <Section n={5} title="付款方式">
+      <Section n={nextSection()} title="付款方式">
         <div className="grid gap-2 sm:grid-cols-3">
           {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
             <label
@@ -417,14 +510,37 @@ export function OrderForm({
             {groupLines
               .filter((g) => g.photos > 0)
               .map((g) => (
-                <tr key={g.key}>
-                  <td className="py-1">{g.title}</td>
-                  <td className="py-1 text-neutral-600">
-                    {g.photos} 張照片，共印 {g.prints} 張 × {fmt(g.unitPrice)}
-                  </td>
-                  <td className="py-1 text-right">{fmt(g.subtotal)}</td>
-                </tr>
+                <Fragment key={g.key}>
+                  <tr>
+                    <td className="py-1">{g.title}</td>
+                    <td className="py-1 text-neutral-600">
+                      {g.photos} 張照片，共印 {g.prints} 張 × {fmt(g.unitPrice)}
+                      {g.printing > g.unitPrice * g.prints && "（未滿低消）"}
+                    </td>
+                    <td className="py-1 text-right">{fmt(g.printing)}</td>
+                  </tr>
+                  {g.laminationUnitPrice !== null && (
+                    <tr>
+                      <td className="py-1 pl-4">護貝</td>
+                      <td className="py-1 text-neutral-600">
+                        {g.prints} 張 × {fmt(g.laminationUnitPrice)}
+                        {g.lamination > g.laminationUnitPrice * g.prints &&
+                          "（未滿低消）"}
+                      </td>
+                      <td className="py-1 text-right">{fmt(g.lamination)}</td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
+            {idPhotoLines.map((l) => (
+              <tr key={l.id}>
+                <td className="py-1">{l.name}</td>
+                <td className="py-1 text-neutral-600">
+                  {l.sets} 組 × {fmt(l.price)}
+                </td>
+                <td className="py-1 text-right">{fmt(l.subtotal)}</td>
+              </tr>
+            ))}
             {itemLines.map((i) => (
               <tr key={i.id}>
                 <td className="py-1">{i.name}</td>

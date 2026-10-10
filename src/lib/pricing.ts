@@ -1,6 +1,14 @@
 // Pure order-total calculation (NT$ integers). Shared by checkout UI and submitOrder.
 
-export type PricedGroup = { unitPrice: number; quantities: number[] };
+/** 低消: a print group's printing (and lamination) never costs less than this. */
+export const MIN_GROUP_CHARGE = 10;
+
+export type PricedGroup = {
+  unitPrice: number;
+  quantities: number[];
+  /** Per-print lamination (護貝) price; null/undefined when not laminated. */
+  laminationUnitPrice?: number | null;
+};
 export type PricedItem = { unitPrice: number; quantity: number };
 
 function assertAmount(n: number, label: string) {
@@ -8,14 +16,30 @@ function assertAmount(n: number, label: string) {
     throw new RangeError(`${label} must be a non-negative integer`);
 }
 
-export function groupSubtotal(group: PricedGroup): number {
-  assertAmount(group.unitPrice, "unitPrice");
+/** unitPrice × prints, but at least MIN_GROUP_CHARGE when anything is printed. */
+export function minimumCharge(unitPrice: number, prints: number): number {
+  assertAmount(unitPrice, "unitPrice");
+  assertAmount(prints, "prints");
+  if (prints === 0) return 0;
+  return Math.max(MIN_GROUP_CHARGE, unitPrice * prints);
+}
+
+export function groupCharges(group: PricedGroup) {
   let prints = 0;
   for (const q of group.quantities) {
     assertAmount(q, "quantity");
     prints += q;
   }
-  return group.unitPrice * prints;
+  const printing = minimumCharge(group.unitPrice, prints);
+  const lamination =
+    group.laminationUnitPrice == null
+      ? 0
+      : minimumCharge(group.laminationUnitPrice, prints);
+  return { prints, printing, lamination, total: printing + lamination };
+}
+
+export function groupSubtotal(group: PricedGroup): number {
+  return groupCharges(group).total;
 }
 
 export function itemSubtotal(item: PricedItem): number {

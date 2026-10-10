@@ -4,6 +4,7 @@
 
 客人上傳 JPG 照片、選沖印尺寸／張數／周邊商品後下單（LINE 登入或訪客）；店家在 `/admin` 管理訂單、會員、照片。
 需求來源是已報價的提案（NT$18,000）：**超出提案範圍的功能，先問再做。**
+業主提供的價目、證件照、付款資訊整理在 `docs/owner-pricing.md`（含尚待確認的項目）。
 
 ## 技術棧
 - Next.js 16 App Router + TypeScript strict + Tailwind v4（Next 16 有破壞性變更，寫之前先查 `node_modules/next/dist/docs/`）

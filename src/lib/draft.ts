@@ -90,17 +90,28 @@ export type DraftPhoto = {
   quantity: number;
   status: "pending" | "uploaded";
   thumbUrl: string | null;
+  productId: number | null; // ID-photo set
 };
 
 export type DraftView = {
-  groups: { id: string; printSizeId: number; photos: DraftPhoto[] }[];
+  groups: {
+    id: string;
+    printSizeId: number;
+    laminate: boolean;
+    photos: DraftPhoto[];
+  }[];
   customPhotos: DraftPhoto[];
+  idPhotos: DraftPhoto[];
 };
 
 export async function loadDraft(orderId: string): Promise<DraftView> {
   const [groupRows, photoRows] = await Promise.all([
     db
-      .select({ id: orderGroups.id, printSizeId: orderGroups.printSizeId })
+      .select({
+        id: orderGroups.id,
+        printSizeId: orderGroups.printSizeId,
+        laminate: orderGroups.laminate,
+      })
       .from(orderGroups)
       .where(eq(orderGroups.orderId, orderId))
       .orderBy(asc(orderGroups.sortOrder), asc(orderGroups.createdAt)),
@@ -123,6 +134,7 @@ export async function loadDraft(orderId: string): Promise<DraftView> {
         quantity: p.quantity,
         status: p.status as "pending" | "uploaded",
         thumbUrl: p.status === "uploaded" ? await presignGet(p.r2Key) : null,
+        productId: p.productId,
       },
     })),
   );
@@ -135,6 +147,7 @@ export async function loadDraft(orderId: string): Promise<DraftView> {
         .map((v) => v.photo),
     })),
     customPhotos: view.filter((v) => v.kind === "custom").map((v) => v.photo),
+    idPhotos: view.filter((v) => v.kind === "id_photo").map((v) => v.photo),
   };
 }
 
@@ -146,6 +159,7 @@ export async function loadCatalog() {
         code: printSizes.code,
         label: printSizes.label,
         price: printSizes.price,
+        laminationPrice: printSizes.laminationPrice,
       })
       .from(printSizes)
       .where(eq(printSizes.active, true))
@@ -156,12 +170,17 @@ export async function loadCatalog() {
         name: products.name,
         description: products.description,
         price: products.price,
+        category: products.category,
       })
       .from(products)
       .where(eq(products.active, true))
       .orderBy(asc(products.sortOrder)),
   ]);
-  return { sizes, products: productRows };
+  return {
+    sizes,
+    addons: productRows.filter((p) => p.category === "addon"),
+    idPhotoSets: productRows.filter((p) => p.category === "id_photo"),
+  };
 }
 
 export type Catalog = Awaited<ReturnType<typeof loadCatalog>>;

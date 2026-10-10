@@ -30,10 +30,10 @@ import {
   MAX_PROOF_BYTES,
   photoIdInput,
   registerPhotosInput,
-  savePhotoQuantitiesInput,
+  savePhotoOptionsInput,
   submitOrderInput,
   transferProofUploadInput,
-  updateGroupSizeInput,
+  updateGroupInput,
 } from "@/lib/validators/order";
 import {
   orderGroups,
@@ -66,6 +66,22 @@ async function activeSizeExists(printSizeId: number) {
     .from(printSizes)
     .where(and(eq(printSizes.id, printSizeId), eq(printSizes.active, true)));
   return !!row;
+}
+
+/** Ids among `ids` that are active ID-photo sets (證件照). */
+async function activeIdPhotoSets(ids: number[]) {
+  if (!ids.length) return new Set<number>();
+  const rows = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(
+      and(
+        inArray(products.id, ids),
+        eq(products.category, "id_photo"),
+        eq(products.active, true),
+      ),
+    );
+  return new Set(rows.map((r) => r.id));
 }
 
 /** The group, if it belongs to the caller's draft. */
@@ -107,21 +123,31 @@ export async function createGroup(
     .where(eq(orderGroups.orderId, orderId));
   const [group] = await db
     .insert(orderGroups)
-    .values({ orderId, printSizeId: data.printSizeId, sortOrder: n })
+    .values({
+      orderId,
+      printSizeId: data.printSizeId,
+      laminate: data.laminate,
+      sortOrder: n,
+    })
     .returning({ id: orderGroups.id });
   return { ok: true, groupId: group.id };
 }
 
-export async function updateGroupSize(input: unknown): Promise<Result> {
-  const { data, error } = parse(updateGroupSizeInput, input);
+export async function updateGroup(input: unknown): Promise<Result> {
+  const { data, error } = parse(updateGroupInput, input);
   if (!data) return { ok: false, error };
   const group = await ownedGroup(data.groupId);
   if (!group) return NO_DRAFT;
-  if (!(await activeSizeExists(data.printSizeId)))
+  if (
+    data.printSizeId !== undefined &&
+    !(await activeSizeExists(data.printSizeId))
+  )
     return { ok: false, error: "沒有這個尺寸" };
+  if (data.printSizeId === undefined && data.laminate === undefined)
+    return { ok: true };
   await db
     .update(orderGroups)
-    .set({ printSizeId: data.printSizeId })
+    .set({ printSizeId: data.printSizeId, laminate: data.laminate })
     .where(eq(orderGroups.id, group.id));
   return { ok: true };
 }
@@ -151,12 +177,18 @@ export async function registerPhotos(
 
   let orderId: string;
   let groupId: string | null = null;
+  let productId: number | null = null;
   if (data.kind === "print") {
     const group = await ownedGroup(data.groupId);
     if (!group) return NO_DRAFT;
     orderId = group.orderId;
     groupId = group.id;
   } else {
+    if (data.kind === "id_photo") {
+      if (!(await activeIdPhotoSets([data.productId])).has(data.productId))
+        return { ok: false, error: "沒有這個證件照組合" };
+      productId = data.productId;
+    }
     orderId = await ensureDraftId(owner);
   }
 
@@ -167,6 +199,7 @@ export async function registerPhotos(
       id,
       orderId,
       groupId,
+      productId,
       kind: data.kind,
       r2Key: photoKey(orderId, id),
       fileName: f.fileName,
@@ -246,17 +279,27 @@ export async function deletePhoto(input: unknown): Promise<Result> {
   return { ok: true };
 }
 
-export async function savePhotoQuantities(input: unknown): Promise<Result> {
-  const { data, error } = parse(savePhotoQuantitiesInput, input);
+export async function savePhotoOptions(input: unknown): Promise<Result> {
+  const { data, error } = parse(savePhotoOptionsInput, input);
   if (!data) return { ok: false, error };
   const draftId = await findDraftId(await getOwner());
   if (!draftId) return NO_DRAFT;
+  const validSets = await activeIdPhotoSets(
+    data.items.flatMap((i) => (i.productId ? [i.productId] : [])),
+  );
   await db.transaction(async (tx) => {
     for (const item of data.items) {
-      await tx
-        .update(photos)
-        .set({ quantity: item.quantity })
-        .where(and(eq(photos.id, item.photoId), eq(photos.orderId, draftId)));
+      const owned = and(
+        eq(photos.id, item.photoId),
+        eq(photos.orderId, draftId),
+      );
+      await tx.update(photos).set({ quantity: item.quantity }).where(owned);
+      if (item.productId && validSets.has(item.productId)) {
+        await tx
+          .update(photos)
+          .set({ productId: item.productId })
+          .where(and(owned, eq(photos.kind, "id_photo")));
+      }
     }
   });
   return { ok: true };
@@ -319,6 +362,7 @@ export async function submitOrder(input: unknown): Promise<Result> {
           kind: photos.kind,
           status: photos.status,
           quantity: photos.quantity,
+          productId: photos.productId,
         })
         .from(photos)
         .where(eq(photos.orderId, orderId));
@@ -328,24 +372,31 @@ export async function submitOrder(input: unknown): Promise<Result> {
           `還有 ${pending} 張照片沒有上傳完成，請重傳或移除`,
         );
 
-      // Apply the quantities shown at checkout
-      const qty = new Map(
-        data.photoQuantities.map((q) => [q.photoId, q.quantity]),
-      );
+      // Apply the quantities (and ID-photo sets) shown at checkout
+      const options = new Map(data.photoOptions.map((o) => [o.photoId, o]));
       for (const p of photoRows) {
-        const q = qty.get(p.id);
-        if (p.kind === "print" && q !== undefined && q !== p.quantity) {
+        const o = options.get(p.id);
+        if (!o || p.kind === "custom") continue;
+        const productId =
+          p.kind === "id_photo" && o.productId ? o.productId : p.productId;
+        if (o.quantity !== p.quantity || productId !== p.productId) {
           await tx
             .update(photos)
-            .set({ quantity: q })
+            .set({ quantity: o.quantity, productId })
             .where(eq(photos.id, p.id));
-          p.quantity = q;
+          p.quantity = o.quantity;
+          p.productId = productId;
         }
       }
 
-      // Snapshot each group's current unit price; drop empty groups
+      // Snapshot each group's current prices; drop empty groups
       const groups = await tx
-        .select({ id: orderGroups.id, price: printSizes.price })
+        .select({
+          id: orderGroups.id,
+          price: printSizes.price,
+          laminate: orderGroups.laminate,
+          laminationPrice: printSizes.laminationPrice,
+        })
         .from(orderGroups)
         .innerJoin(printSizes, eq(printSizes.id, orderGroups.printSizeId))
         .where(eq(orderGroups.orderId, orderId));
@@ -363,42 +414,65 @@ export async function submitOrder(input: unknown): Promise<Result> {
           await tx.delete(orderGroups).where(eq(orderGroups.id, g.id));
           continue;
         }
+        const laminationUnitPrice = g.laminate ? g.laminationPrice : null;
         await tx
           .update(orderGroups)
-          .set({ unitPrice: g.price })
+          .set({ unitPrice: g.price, laminationUnitPrice })
           .where(eq(orderGroups.id, g.id));
-        pricedGroups.push({ unitPrice: g.price, quantities });
+        pricedGroups.push({
+          unitPrice: g.price,
+          laminationUnitPrice,
+          quantities,
+        });
       }
 
-      // Snapshot add-on products
+      // Snapshot add-on products and ID-photo sets (one line per ID photo)
       const wanted = data.items.filter((i) => i.quantity > 0);
-      const productRows = wanted.length
+      const idPhotos = photoRows.filter((p) => p.kind === "id_photo");
+      const productIds = [
+        ...new Set([
+          ...wanted.map((i) => i.productId),
+          ...idPhotos.flatMap((p) => (p.productId ? [p.productId] : [])),
+        ]),
+      ];
+      const productRows = productIds.length
         ? await tx
             .select()
             .from(products)
             .where(
-              and(
-                inArray(
-                  products.id,
-                  wanted.map((i) => i.productId),
-                ),
-                eq(products.active, true),
-              ),
+              and(inArray(products.id, productIds), eq(products.active, true)),
             )
         : [];
-      if (productRows.length !== new Set(wanted.map((i) => i.productId)).size) {
-        throw new SubmitError("有商品已下架，請重新整理頁面");
-      }
-      const itemRows = wanted.map((i) => {
-        const p = productRows.find((r) => r.id === i.productId)!;
-        return {
-          orderId,
-          productId: p.id,
-          name: p.name,
-          unitPrice: p.price,
-          quantity: i.quantity,
-        };
-      });
+      const product = (id: number | null, category: "addon" | "id_photo") => {
+        const p = productRows.find(
+          (r) => r.id === id && r.category === category,
+        );
+        if (!p) throw new SubmitError("有商品已下架，請重新整理頁面");
+        return p;
+      };
+      const itemRows = [
+        ...wanted.map((i) => {
+          const p = product(i.productId, "addon");
+          return {
+            orderId,
+            productId: p.id,
+            name: p.name,
+            unitPrice: p.price,
+            quantity: i.quantity,
+          };
+        }),
+        ...idPhotos.map((photo) => {
+          const p = product(photo.productId, "id_photo");
+          return {
+            orderId,
+            productId: p.id,
+            name: p.name,
+            unitPrice: p.price,
+            quantity: photo.quantity,
+            photoId: photo.id,
+          };
+        }),
+      ];
       await tx.delete(orderItems).where(eq(orderItems.orderId, orderId));
       if (itemRows.length) await tx.insert(orderItems).values(itemRows);
 
