@@ -1,8 +1,9 @@
 import "server-only";
 import {
-  DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -71,10 +72,36 @@ export async function headObjectSize(key: string): Promise<number | null> {
   }
 }
 
-export async function deleteObjects(keys: string[]) {
-  await Promise.all(
-    keys.map((key) =>
-      r2.send(new DeleteObjectCommand({ Bucket: bucket, Key: key })),
-    ),
-  );
+/** Deletes in batches of 1000; returns the keys R2 failed to delete. */
+export async function deleteObjects(keys: string[]): Promise<string[]> {
+  const failed: string[] = [];
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000);
+    const res = await r2.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: batch.map((Key) => ({ Key })), Quiet: true },
+      }),
+    );
+    for (const e of res.Errors ?? []) if (e.Key) failed.push(e.Key);
+  }
+  return failed;
+}
+
+/** Every key under `prefix` (paginated). */
+export async function listKeys(prefix: string): Promise<string[]> {
+  const keys: string[] = [];
+  let token: string | undefined;
+  do {
+    const res = await r2.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: token,
+      }),
+    );
+    for (const o of res.Contents ?? []) if (o.Key) keys.push(o.Key);
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+  return keys;
 }

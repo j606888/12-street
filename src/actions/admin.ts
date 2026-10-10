@@ -5,7 +5,8 @@ import { refresh } from "next/cache";
 import type { z } from "zod";
 import { loadOrderPhotos } from "@/lib/admin";
 import { db } from "@/lib/db";
-import { deleteObjects, presignGet } from "@/lib/r2";
+import { purgePhotoRows } from "@/lib/cleanup";
+import { presignGet } from "@/lib/r2";
 import { getAdmin } from "@/lib/session";
 import {
   orderIdInput,
@@ -112,14 +113,15 @@ export async function deleteOrderPhotos(
     .where(and(eq(photos.orderId, order.id), ne(photos.status, "deleted")));
   if (!rows.length) return { ok: true, deleted: 0 };
 
-  // R2 first: a failed delete leaves the rows as-is for the cron to retry
-  await deleteObjects(rows.map((r) => r.r2Key));
-  await db
-    .update(photos)
-    .set({ status: "deleted", deletedAt: new Date() })
-    .where(and(eq(photos.orderId, order.id), ne(photos.status, "deleted")));
+  const deleted = await purgePhotoRows(rows);
   refresh();
-  return { ok: true, deleted: rows.length };
+  if (deleted < rows.length) {
+    return {
+      ok: false,
+      error: `有 ${rows.length - deleted} 張刪除失敗，請再試一次`,
+    };
+  }
+  return { ok: true, deleted };
 }
 
 export async function setMemberTag(input: unknown): Promise<Result> {

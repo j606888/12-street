@@ -43,3 +43,4 @@ pnpm db:seed             # 尺寸、價格、周邊商品、管理員
 - 連 RDS 一定要 SSL（`sslmode=verify-full`）
 - 機密只放 `.env.local`／Vercel env，新增 env 時同步更新 `.env.example`
 - 照片 1 個月後由 cron（`/api/cron/cleanup`）刪除，所有照片都要有 `expiresAt`
+- 轉帳截圖在送出 30 天後由同一個 cron 刪除；R2 CORS／lifecycle 和 cron 設定見 `docs/r2-setup.md`

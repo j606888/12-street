@@ -16,6 +16,7 @@ import {
 } from "@/lib/draft";
 import { nextOrderNo } from "@/lib/orders";
 import { calculateTotal } from "@/lib/pricing";
+import { RETENTION_MS } from "@/lib/retention";
 import {
   deleteObjects,
   headObjectSize,
@@ -48,7 +49,6 @@ import {
 type Result<T extends object = object> =
   ({ ok: true } & T) | { ok: false; error: string };
 
-const PHOTO_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const NO_DRAFT = {
   ok: false,
   error: "找不到訂單草稿，請重新整理頁面",
@@ -192,7 +192,7 @@ export async function registerPhotos(
     orderId = await ensureDraftId(owner);
   }
 
-  const expiresAt = new Date(Date.now() + PHOTO_TTL_MS);
+  const expiresAt = new Date(Date.now() + RETENTION_MS);
   const rows = data.files.map((f) => {
     const id = randomUUID();
     return {
