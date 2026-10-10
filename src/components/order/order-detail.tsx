@@ -11,9 +11,7 @@ import { loadOrderLines, type OrderRow } from "@/lib/order-view";
 import { groupCharges } from "@/lib/pricing";
 
 /** Status, line items, contact and payment info of a submitted order. */
-export async function OrderDetail({ order }: { order: OrderRow }) {
-  const { groups, items, customPhotoCount } = await loadOrderLines(order.id);
-
+export function OrderDetail({ order }: { order: OrderRow }) {
   return (
     <>
       <section className="flex flex-wrap gap-2 text-sm">
@@ -31,75 +29,7 @@ export async function OrderDetail({ order }: { order: OrderRow }) {
 
       <section className="grid gap-2">
         <h2 className="text-lg font-bold">訂單明細</h2>
-        <table className="w-full text-sm">
-          <tbody>
-            {groups.map((g) => {
-              const unitPrice = g.unitPrice ?? 0;
-              const c = groupCharges({
-                unitPrice,
-                laminationUnitPrice: g.laminationUnitPrice,
-                quantities: [g.prints],
-              });
-              return (
-                <Fragment key={g.id}>
-                  <tr className="border-b">
-                    <td className="py-2">{g.label}</td>
-                    <td className="py-2 text-neutral-600">
-                      {g.photoCount} 張照片，共印 {g.prints} 張 ×{" "}
-                      {fmt(unitPrice)}
-                      {c.printing > unitPrice * g.prints && "（未滿低消）"}
-                    </td>
-                    <td className="py-2 text-right">{fmt(c.printing)}</td>
-                  </tr>
-                  {g.laminationUnitPrice !== null && (
-                    <tr className="border-b">
-                      <td className="py-2 pl-4">護貝</td>
-                      <td className="py-2 text-neutral-600">
-                        {g.prints} 張 × {fmt(g.laminationUnitPrice)}
-                        {c.lamination > g.laminationUnitPrice * g.prints &&
-                          "（未滿低消）"}
-                      </td>
-                      <td className="py-2 text-right">{fmt(c.lamination)}</td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
-            {items.map((i) => (
-              <tr key={i.id} className="border-b">
-                <td className="py-2">{i.name}</td>
-                <td className="py-2 text-neutral-600">
-                  {i.quantity} {i.photoId ? "組" : "個"} × {fmt(i.unitPrice)}
-                </td>
-                <td className="py-2 text-right">
-                  {fmt(i.unitPrice * i.quantity)}
-                </td>
-              </tr>
-            ))}
-            {(customPhotoCount > 0 || order.customNote) && (
-              <tr className="border-b">
-                <td className="py-2">客製化製作</td>
-                <td className="py-2 text-neutral-600">
-                  {customPhotoCount} 張照片
-                  {order.customNote && (
-                    <p className="whitespace-pre-line">{order.customNote}</p>
-                  )}
-                </td>
-                <td className="py-2 text-right text-neutral-600">另行報價</td>
-              </tr>
-            )}
-          </tbody>
-          <tfoot>
-            <tr className="font-bold">
-              <td className="pt-3" colSpan={2}>
-                總計
-              </td>
-              <td className="pt-3 text-right text-lg">
-                {fmt(order.totalAmount)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+        <OrderLines order={order} />
       </section>
 
       <section className="grid gap-2 text-sm">
@@ -143,5 +73,77 @@ export async function OrderDetail({ order }: { order: OrderRow }) {
         </section>
       )}
     </>
+  );
+}
+
+/** Line items with lamination, minimum charges, ID photos and custom work. */
+export async function OrderLines({ order }: { order: OrderRow }) {
+  const { groups, items, customPhotoCount } = await loadOrderLines(order.id);
+
+  return (
+    <table className="w-full text-sm">
+      <tbody>
+        {groups.map((g) => {
+          const unitPrice = g.unitPrice ?? 0;
+          const c = groupCharges({
+            unitPrice,
+            laminationUnitPrice: g.laminationUnitPrice,
+            quantities: [g.prints],
+          });
+          return (
+            <Fragment key={g.id}>
+              <tr className="border-b">
+                <td className="py-2">{g.label}</td>
+                <td className="py-2 text-neutral-600">
+                  {g.photoCount} 張照片，共印 {g.prints} 張 × {fmt(unitPrice)}
+                  {c.printing > unitPrice * g.prints && "（未滿低消）"}
+                </td>
+                <td className="py-2 text-right">{fmt(c.printing)}</td>
+              </tr>
+              {g.laminationUnitPrice !== null && (
+                <tr className="border-b">
+                  <td className="py-2 pl-4">護貝</td>
+                  <td className="py-2 text-neutral-600">
+                    {g.prints} 張 × {fmt(g.laminationUnitPrice)}
+                    {c.lamination > g.laminationUnitPrice * g.prints &&
+                      "（未滿低消）"}
+                  </td>
+                  <td className="py-2 text-right">{fmt(c.lamination)}</td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
+        {items.map((i) => (
+          <tr key={i.id} className="border-b">
+            <td className="py-2">{i.name}</td>
+            <td className="py-2 text-neutral-600">
+              {i.quantity} {i.photoId ? "組" : "個"} × {fmt(i.unitPrice)}
+            </td>
+            <td className="py-2 text-right">{fmt(i.unitPrice * i.quantity)}</td>
+          </tr>
+        ))}
+        {(customPhotoCount > 0 || order.customNote) && (
+          <tr className="border-b">
+            <td className="py-2">客製化製作</td>
+            <td className="py-2 text-neutral-600">
+              {customPhotoCount} 張照片
+              {order.customNote && (
+                <p className="whitespace-pre-line">{order.customNote}</p>
+              )}
+            </td>
+            <td className="py-2 text-right text-neutral-600">另行報價</td>
+          </tr>
+        )}
+      </tbody>
+      <tfoot>
+        <tr className="font-bold">
+          <td className="pt-3" colSpan={2}>
+            總計
+          </td>
+          <td className="pt-3 text-right text-lg">{fmt(order.totalAmount)}</td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }

@@ -21,3 +21,9 @@ export async function requireAdmin() {
   if (session.user.role !== "admin") notFound();
   return session.user;
 }
+
+/** For Server Actions: the admin user, or null (no redirect). */
+export async function getAdmin() {
+  const session = await getSession();
+  return session?.user.role === "admin" ? session.user : null;
+}
