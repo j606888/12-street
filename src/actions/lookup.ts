@@ -1,14 +1,15 @@
 "use server";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, count, eq, gte, ne } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { cookieOptions } from "@/lib/draft";
+import { isLookupThrottled, lookupWindowStart } from "@/lib/lookup-throttle";
 import { addAccessId } from "@/lib/order-access";
 import { ORDER_ACCESS_COOKIE } from "@/lib/order-view";
 import { lookupOrderInput, phoneSchema } from "@/lib/validators/order";
-import { orders } from "@/db/schema";
+import { lookupFailures, orders } from "@/db/schema";
 
 export type LookupState = { error?: string; orderNo?: string; phone?: string };
 
@@ -37,18 +38,36 @@ export async function lookupOrder(
     return { ...echo, error };
   }
 
+  const { orderNo, phone } = parsed.data;
+
+  // Throttle per order number; the answer stays the generic one so a locked
+  // number looks the same as a wrong one.
+  const [recent] = await db
+    .select({ n: count() })
+    .from(lookupFailures)
+    .where(
+      and(
+        eq(lookupFailures.orderNo, orderNo),
+        gte(lookupFailures.createdAt, lookupWindowStart(new Date())),
+      ),
+    );
+  if (isLookupThrottled(recent.n)) return { ...echo, error: NOT_FOUND };
+
   const [order] = await db
     .select({ id: orders.id })
     .from(orders)
     .where(
       and(
-        eq(orders.orderNo, parsed.data.orderNo),
-        eq(orders.contactPhone, parsed.data.phone),
+        eq(orders.orderNo, orderNo),
+        eq(orders.contactPhone, phone),
         ne(orders.status, "draft"),
       ),
     )
     .limit(1);
-  if (!order) return { ...echo, error: NOT_FOUND };
+  if (!order) {
+    await db.insert(lookupFailures).values({ orderNo });
+    return { ...echo, error: NOT_FOUND };
+  }
 
   const jar = await cookies();
   jar.set(

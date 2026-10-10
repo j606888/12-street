@@ -194,3 +194,14 @@ export const userTags = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.tagId] })],
 );
+
+// Failed guest lookups, keyed by the order number tried; used to throttle guessing
+export const lookupFailures = pgTable(
+  "lookup_failures",
+  {
+    id: serial("id").primaryKey(),
+    orderNo: text("order_no").notNull(), // normalized, may not exist
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lookup_failures_order_no_idx").on(t.orderNo, t.createdAt)],
+);
