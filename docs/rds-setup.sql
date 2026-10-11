@@ -34,20 +34,19 @@ SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'photo_migrator') AS migra
 SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'photo_app') AS app_exists \gset
 
 \if :migrator_exists
-  ALTER ROLE photo_migrator WITH LOGIN PASSWORD :'migrator_password';
+  ALTER ROLE photo_migrator WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD :'migrator_password';
 \else
-  CREATE ROLE photo_migrator WITH LOGIN PASSWORD :'migrator_password';
+  CREATE ROLE photo_migrator WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD :'migrator_password';
 \endif
 
 \if :app_exists
-  ALTER ROLE photo_app WITH LOGIN PASSWORD :'app_password';
+  ALTER ROLE photo_app WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD :'app_password';
 \else
-  CREATE ROLE photo_app WITH LOGIN PASSWORD :'app_password';
+  CREATE ROLE photo_app WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD :'app_password';
 \endif
 
--- 兩個角色都不需要超級權限、建 DB、建角色
-ALTER ROLE photo_migrator NOSUPERUSER NOCREATEDB NOCREATEROLE;
-ALTER ROLE photo_app NOSUPERUSER NOCREATEDB NOCREATEROLE;
+-- 兩個角色都不能建 DB、建角色（上面已指定）。新角色預設就不是 superuser；
+-- RDS 的 master 不是 superuser，連 NOSUPERUSER 都不能設，所以這裡不寫
 
 -- RDS 的 master 不是真正的 superuser，要先成為 photo_migrator 的成員，
 -- 才能把物件擁有權交給它、或用 ALTER DEFAULT PRIVILEGES FOR ROLE photo_migrator
