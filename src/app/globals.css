@@ -1,26 +1,27 @@
 @import "tailwindcss";
 
+/* Warm paper palette shared by the shop pages (see the design canvas) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf8f4;
+  --foreground: #241e1a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-card: #ffffff;
+  --color-line: #e1ddd8;
+  --color-subtle: #f2f0ec;
+  --color-muted: #716a65;
+  --color-brand: #b8500f;
+  --color-brand-dark: #8f3d0b;
+  --color-brand-tint: #fdf3ec;
+  --color-brand-soft: #f6e8de;
+  --font-sans: var(--font-jakarta), var(--font-noto-sans-tc), sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }

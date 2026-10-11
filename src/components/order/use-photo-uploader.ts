@@ -268,11 +268,11 @@ export function usePhotoUploader(
     return p;
   }, []);
 
+  /** Adds an empty group and returns its key. */
   const addGroup = useCallback((printSizeId: number) => {
-    setGroups((gs) => [
-      ...gs,
-      { key: newLocalId(), printSizeId, laminate: false },
-    ]);
+    const key = newLocalId();
+    setGroups((gs) => [...gs, { key, printSizeId, laminate: false }]);
+    return key;
   }, []);
 
   const updateGroupOptions = useCallback(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { PlusIcon, XIcon } from "@/components/icons";
 import { MAX_QUANTITY } from "@/lib/validators/order";
 import type { Entry, Notice, PhotoUploader } from "./use-photo-uploader";
 
@@ -34,7 +35,6 @@ export function PhotoBucket({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [bulkQty, setBulkQty] = useState(1);
 
   // Duplicate hint: same SHA-256 inside this group (informational only)
   const duplicates = useMemo(() => {
@@ -49,13 +49,44 @@ export function PhotoBucket({
   const done = entries.filter((e) => e.status === "uploaded").length;
   const failed = entries.filter((e) => e.status === "failed").length;
   const missing = entries.filter((e) => e.status === "missing").length;
+  const prints = entries.reduce((n, e) => n + e.quantity, 0);
+  const sameQty =
+    entries.length > 0 && entries.every((e) => e.quantity === entries[0].quantity)
+      ? entries[0].quantity
+      : null;
+  const bulkBase = sameQty ?? Math.max(1, ...entries.map((e) => e.quantity));
 
   function pick(files: FileList | null) {
     if (files?.length) void uploader.addFiles(bucket, Array.from(files));
   }
 
+  function setAll(q: number) {
+    uploader.setQuantity(
+      entries.map((e) => e.localId),
+      Math.min(MAX_QUANTITY, Math.max(1, q)),
+    );
+  }
+
   return (
     <div className="grid gap-3">
+      {entries.length > 0 && (
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="text-[15px] font-bold">已選 {entries.length} 張照片</h3>
+          <span className="text-[13px] text-muted">
+            {done < entries.length || failed > 0 ? (
+              <>
+                已上傳 {done}／{entries.length}
+                {failed > 0 && (
+                  <span className="text-red-700">，失敗 {failed} 張</span>
+                )}
+              </>
+            ) : (
+              quantityUnit && `共 ${prints} ${quantityUnit}`
+            )}
+          </span>
+        </div>
+      )}
+
       <div
         onDragOver={(e) => {
           e.preventDefault();
@@ -67,20 +98,28 @@ export function PhotoBucket({
           setDragging(false);
           pick(e.dataTransfer.files);
         }}
-        className={`grid place-items-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center ${
-          dragging ? "border-sky-500 bg-sky-50" : "border-neutral-300"
-        }`}
       >
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+          className={`flex w-full items-center gap-3 rounded-2xl border-2 border-dashed px-4 py-3.5 text-left transition-colors ${
+            dragging
+              ? "border-brand bg-brand-soft"
+              : "border-[#d9c3b3] bg-[#fdf8f4] hover:border-brand"
+          }`}
         >
-          選擇照片
+          <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-brand text-white">
+            <PlusIcon />
+          </span>
+          <span>
+            <span className="block text-[15px] font-bold">
+              {entries.length ? "加入更多照片" : "選擇照片"}
+            </span>
+            <span className="mt-0.5 block text-xs text-muted">
+              可一次選多張，或拖曳到這裡 · 只收 JPG
+            </span>
+          </span>
         </button>
-        <p className="text-xs text-neutral-500">
-          可一次選多張，或把照片拖曳到這裡。只接受 JPG／JPEG。
-        </p>
         <input
           ref={inputRef}
           type="file"
@@ -97,7 +136,7 @@ export function PhotoBucket({
       {notices.length > 0 && (
         <div
           role="alert"
-          className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
         >
           <div className="flex items-start justify-between gap-2">
             <p className="font-medium">以下檔案沒有加入：</p>
@@ -118,187 +157,207 @@ export function PhotoBucket({
       )}
 
       {missing > 0 && (
-        <p className="rounded-md bg-orange-50 p-3 text-sm text-orange-900">
+        <p className="rounded-xl bg-orange-50 p-3 text-sm text-orange-900">
           有 {missing}{" "}
-          張照片上次沒有傳完。請再選一次同一張照片會自動接續上傳，或按「移除」。
+          張照片上次沒有傳完。請再選一次同一張照片會自動接續上傳，或按 × 移除。
         </p>
       )}
 
-      {entries.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-neutral-600">
-          <span>
-            已上傳 {done}／{entries.length} 張
-            {failed > 0 && (
-              <span className="text-red-600">，失敗 {failed} 張</span>
-            )}
+      {quantityUnit && entries.length > 1 && (
+        <div className="flex items-center justify-between rounded-xl bg-subtle px-3 py-2">
+          <span className="text-[13px] font-semibold">
+            每張都{quantityUnit === "張" ? "洗" : "印"}
           </span>
-          {quantityUnit && entries.length > 1 && (
-            <span className="flex items-center gap-1">
-              全部設為
-              <QuantityInput
-                value={bulkQty}
-                onChange={setBulkQty}
-                label={`批次${quantityUnit}數`}
-              />
-              {quantityUnit}
-              <button
-                type="button"
-                onClick={() =>
-                  uploader.setQuantity(
-                    entries.map((e) => e.localId),
-                    bulkQty,
-                  )
-                }
-                className="rounded border px-2 py-1"
-              >
-                套用
-              </button>
+          <span className="flex items-center gap-1">
+            <StepButton
+              onClick={() => setAll(bulkBase - 1)}
+              label={`全部減一${quantityUnit}`}
+              className="rounded-[10px] border border-line bg-card"
+            >
+              −
+            </StepButton>
+            <span className="min-w-14 text-center text-[13px] font-bold">
+              {sameQty ? `全部 ${sameQty} ${quantityUnit}` : "不一樣"}
             </span>
-          )}
+            <StepButton
+              onClick={() => setAll(bulkBase + 1)}
+              label={`全部加一${quantityUnit}`}
+              className="rounded-[10px] border border-line bg-card"
+            >
+              +
+            </StepButton>
+          </span>
         </div>
       )}
 
-      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-        {entries.map((e) => (
-          <li
-            key={e.localId}
-            className="grid gap-1 rounded-lg border bg-white p-2 text-xs"
-          >
-            <div className="relative aspect-square overflow-hidden rounded bg-neutral-100">
-              {e.previewUrl ? (
-                // Local blob: / presigned R2 URLs; next/image can't optimize either
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={e.previewUrl}
-                  alt={e.fileName}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="grid h-full place-items-center text-neutral-400">
-                  無預覽
-                </div>
-              )}
-              {duplicates.has(e.localId) && (
-                <span className="absolute top-1 left-1 rounded bg-amber-400 px-1.5 py-0.5 font-medium text-amber-950">
-                  重複照片
-                </span>
-              )}
-            </div>
-            <p className="truncate" title={e.fileName}>
-              {e.fileName}
-            </p>
-            <StatusLine entry={e} />
-            {idPhotoSets && (
-              <select
-                value={e.productId ?? ""}
-                onChange={(ev) =>
-                  uploader.setIdPhotoSet(e.localId, Number(ev.target.value))
-                }
-                aria-label={`${e.fileName} 證件照組合`}
-                className="w-full rounded border bg-white px-1 py-1"
-              >
-                {idPhotoSets.map((set) => (
-                  <option key={set.id} value={set.id}>
-                    {set.name.replace(/^證件照：/, "")}
-                  </option>
-                ))}
-              </select>
-            )}
-            <div className="flex items-center justify-between gap-1">
-              {quantityUnit ? (
-                <span className="flex items-center gap-1">
-                  <QuantityInput
-                    value={e.quantity}
-                    onChange={(q) => uploader.setQuantity([e.localId], q)}
-                    label={`${e.fileName} ${quantityUnit}數`}
+      {entries.length > 0 && (
+        <ul className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5">
+          {entries.map((e) => (
+            <li key={e.localId} className="grid content-start gap-1.5">
+              <div className="relative aspect-square overflow-hidden rounded-[10px] bg-subtle">
+                {e.previewUrl ? (
+                  // Local blob: / presigned R2 URLs; next/image can't optimize either
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={e.previewUrl}
+                    alt={e.fileName}
+                    className="h-full w-full object-cover"
                   />
-                  {quantityUnit}
-                </span>
-              ) : (
-                <span />
-              )}
-              <span className="flex gap-2">
-                {e.status === "failed" && e.file && (
-                  <button
-                    type="button"
-                    onClick={() => void uploader.retry(e.localId)}
-                    className="text-sky-700 underline"
-                  >
-                    重傳
-                  </button>
+                ) : (
+                  <div className="grid h-full place-items-center px-1 text-center text-xs text-muted">
+                    {e.fileName}
+                  </div>
                 )}
                 <button
                   type="button"
                   onClick={() => void uploader.remove(e.localId)}
-                  className="text-neutral-500 underline"
+                  aria-label={`移除 ${e.fileName}`}
+                  className="absolute top-1 right-1 grid size-7 place-items-center rounded-full bg-[#241e1a]/75 text-white"
                 >
-                  移除
+                  <XIcon className="size-4" />
                 </button>
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
+                {duplicates.has(e.localId) && (
+                  <span className="absolute bottom-1 left-1 rounded-md bg-[#fff4d6] px-1.5 py-0.5 text-[11px] font-bold text-[#7a4b00]">
+                    可能重複
+                  </span>
+                )}
+                <TileStatus entry={e} onRetry={() => void uploader.retry(e.localId)} />
+              </div>
+              {idPhotoSets && (
+                <select
+                  value={e.productId ?? ""}
+                  onChange={(ev) =>
+                    uploader.setIdPhotoSet(e.localId, Number(ev.target.value))
+                  }
+                  aria-label={`${e.fileName} 證件照組合`}
+                  className="h-9 w-full rounded-[10px] border border-line bg-card px-1 text-xs"
+                >
+                  {idPhotoSets.map((set) => (
+                    <option key={set.id} value={set.id}>
+                      {set.name.replace(/^證件照：/, "")}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {quantityUnit && (
+                <Stepper
+                  value={e.quantity}
+                  onChange={(q) => uploader.setQuantity([e.localId], q)}
+                  label={`${e.fileName} ${quantityUnit}數`}
+                  unit={quantityUnit}
+                />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       {entries.some((e) => duplicates.has(e.localId)) && (
         <p className="text-sm text-amber-800">
-          標示「重複照片」的是內容完全相同的檔案，如果不是故意的，可以移除多的那張。
+          標示「可能重複」的是內容完全相同的檔案，如果不是故意的，可以移除多的那張。
         </p>
       )}
     </div>
   );
 }
 
-function StatusLine({ entry: e }: { entry: Entry }) {
-  const color =
-    e.status === "uploaded"
-      ? "text-green-700"
-      : e.status === "failed" || e.status === "missing"
-        ? "text-red-600"
-        : "text-neutral-500";
+/** Upload progress / failure laid over the thumbnail; nothing once uploaded. */
+function TileStatus({ entry: e, onRetry }: { entry: Entry; onRetry: () => void }) {
+  if (e.status === "uploaded") return null;
+  const bad = e.status === "failed" || e.status === "missing";
   return (
-    <div className="grid gap-1">
-      <span className={color}>
-        {STATUS_LABEL[e.status]}
-        {e.status === "uploading" && ` ${Math.round(e.progress * 100)}%`}
+    <div
+      className={`absolute inset-x-0 bottom-0 grid gap-1 p-1.5 text-[11px] font-medium text-white ${
+        bad ? "bg-red-800/85" : "bg-[#241e1a]/65"
+      }`}
+    >
+      <span className="flex items-center justify-between gap-1">
+        <span className="truncate">
+          {STATUS_LABEL[e.status]}
+          {e.status === "uploading" && ` ${Math.round(e.progress * 100)}%`}
+        </span>
+        {e.status === "failed" && e.file && (
+          <button type="button" onClick={onRetry} className="underline">
+            重傳
+          </button>
+        )}
       </span>
       {(e.status === "uploading" || e.status === "confirming") && (
-        <div className="h-1 overflow-hidden rounded bg-neutral-200">
-          <div
-            className="h-full bg-sky-500 transition-[width]"
+        <span className="h-1 overflow-hidden rounded bg-white/30">
+          <span
+            className="block h-full bg-white transition-[width]"
             style={{ width: `${e.progress * 100}%` }}
           />
-        </div>
+        </span>
       )}
-      {e.error && <span className="text-red-600">{e.error}</span>}
+      {e.error && <span className="line-clamp-2">{e.error}</span>}
     </div>
   );
 }
 
-export function QuantityInput({
+export function Stepper({
   value,
   onChange,
   label,
+  unit,
   min = 1,
 }: {
   value: number;
   onChange: (n: number) => void;
   label: string;
+  unit?: string;
   min?: number;
 }) {
+  const set = (n: number) => onChange(Math.min(MAX_QUANTITY, Math.max(min, n)));
   return (
-    <input
-      type="number"
-      inputMode="numeric"
-      min={min}
-      max={MAX_QUANTITY}
-      value={value}
+    <div
+      role="group"
       aria-label={label}
-      onChange={(ev) => {
-        const n = Math.trunc(Number(ev.target.value));
-        if (Number.isFinite(n))
-          onChange(Math.min(MAX_QUANTITY, Math.max(min, n)));
-      }}
-      className="w-14 rounded border px-1.5 py-1 text-right"
-    />
+      className="flex h-9 items-center justify-between rounded-[10px] border border-line bg-card"
+    >
+      <StepButton
+        onClick={() => set(value - 1)}
+        label={`減一${unit ?? ""}`}
+        disabled={value <= min}
+      >
+        −
+      </StepButton>
+      <span className="text-sm font-bold tabular-nums" aria-live="polite">
+        {value}
+        {unit && <span className="sr-only"> {unit}</span>}
+      </span>
+      <StepButton
+        onClick={() => set(value + 1)}
+        label={`加一${unit ?? ""}`}
+        disabled={value >= MAX_QUANTITY}
+      >
+        +
+      </StepButton>
+    </div>
+  );
+}
+
+function StepButton({
+  onClick,
+  label,
+  disabled,
+  className = "",
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  disabled?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      disabled={disabled}
+      className={`grid size-9 place-items-center text-lg leading-none disabled:opacity-30 ${className}`}
+    >
+      {children}
+    </button>
   );
 }
