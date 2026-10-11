@@ -12,7 +12,7 @@
 - [ ] 開啟自動備份（保留 7 天）與刪除保護
 - [ ] Security Group：Vercel 沒有固定 IP，5432 對 `0.0.0.0/0` 開放，靠強制 SSL＋強密碼防護。若要鎖 IP，需改用 Vercel Static IPs（Pro 方案）或之後加 RDS Proxy
 - [ ] 本機下載 RDS CA bundle 到 `certs/rds-global-bundle.pem`（已存在則略過）
-- [ ] 在自己的終端機執行 `RDS_HOST=<端點> scripts/rds-bootstrap.sh`：建立 `street12` 資料庫、跑 [rds-setup.sql](rds-setup.sql)、產生兩個角色的亂數密碼，連線字串寫到 `.env.rds.local`（不 commit、不會印出密碼）。只需要輸入 master 密碼
+- [x] 在自己的終端機執行 `RDS_HOST=<端點> scripts/rds-bootstrap.sh`：建立 `street12` 資料庫、跑 [rds-setup.sql](rds-setup.sql)、產生兩個角色的亂數密碼，連線字串寫到 `.env.rds.local`（不 commit、不會印出密碼）。只需要輸入 master 密碼
 - [ ] Vercel 函式區域：`vercel.json` 已設 `regions: ["sin1"]`（新加坡，和 RDS 同區）
 - [ ] 確認腳本最後的檢查輸出：兩個角色 `can_login = t`；`photo_app` 對 public `USAGE = t`、`CREATE = f`，對 drizzle 兩者皆 `f`
 
@@ -28,8 +28,8 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
   ```
 
   注意：`drizzle.config.ts` 與 `src/db/seed.ts` 會讀 `.env.local`，但 dotenv 不會覆蓋已存在的環境變數。如果 `.env.local` 裡有本機的 `DATABASE_URL`，請確認上面的 `MIGRATION_DATABASE_URL` 有生效（它的優先權高於 `DATABASE_URL`），執行前先確認沒有指到本機資料庫。
-- [ ] `pnpm db:migrate`，確認沒有錯誤
-- [ ] `pnpm db:seed`：寫入尺寸、價格、證件照商品、會員標籤（價格以 [owner-pricing.md](owner-pricing.md) 為準）
+- [x] `pnpm db:migrate`（2026-10-11 已對 RDS 執行）。指令：`(set -a; source .env.rds.local; set +a; pnpm db:migrate)`，`.env.rds.local` 的設定會優先於 `.env.local`
+- [x] `pnpm db:seed`（2026-10-11 已執行，同上方式載入 `.env.rds.local`）：寫入尺寸、價格、證件照商品、會員標籤（價格以 [owner-pricing.md](owner-pricing.md) 為準）
 - [ ] 回到 psql 確認 `photo_app` 對新建的資料表有權限（`rds-setup.sql` 結尾有查詢範例）
 - [ ] 管理員：待步驟 5 之後有人用 LINE 登入過一次，再把 LINE user ID 設到 `ADMIN_LINE_IDS` 並重跑 `pnpm db:seed`（做法見 [README](../README.md#成為管理員)）
 
@@ -107,5 +107,5 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 
 ## 8. 日後維護提醒
 
-- 新增 migration（`pnpm db:generate`）後，要再從本機對 RDS 執行 `pnpm db:migrate`，不然 app 會用到還不存在的欄位
+- 新增 migration（`pnpm db:generate`）後，要再從本機對 RDS 執行 `(set -a; source .env.rds.local; set +a; pnpm db:migrate)`，不然 app 會用到還不存在的欄位
 - 資料表由 `photo_migrator` 建立，`photo_app` 的權限靠預設權限自動取得；如果資料表是別的帳號建立的，需要手動 `GRANT`
