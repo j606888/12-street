@@ -18,7 +18,7 @@ Settings → CORS Policy → Edit，貼上：
 [
   {
     "AllowedOrigins": [
-      "http://localhost:3000",
+      "https://12-street.com",
       "https://12-street.vercel.app"
     ],
     "AllowedMethods": ["GET", "HEAD", "PUT"],
@@ -28,8 +28,7 @@ Settings → CORS Policy → Edit，貼上：
 ]
 ```
 
-- 正式網域確定後，把 `https://<正式網域>` 加進 `AllowedOrigins`
-- dev bucket 只需要 `http://localhost:3000`；正式 bucket 不要放 localhost
+- 上面是正式 bucket `street12-photos` 的設定（已套用）；dev bucket `street12-photos-dev` 只放 `http://localhost:3000`
 - R2 的 `AllowedOrigins` 不支援 `https://*.vercel.app` 這種部分萬用字元。Preview 部署如果要測上傳，需要把那個 preview 網址加進去，或讓 preview 用 dev bucket
 
 ## Object lifecycle rules（備援）
@@ -54,4 +53,4 @@ Settings → Object lifecycle rules → Add rule：
 - Vercel 環境變數要設 `CRON_SECRET`（16 字以上，`openssl rand -base64 32`）。沒設的話 route 一律回 401，清除不會執行
 - Hobby 方案的 cron 一天最多一次，實際執行時間可能在該小時內任何時間
 - 執行結果會寫在 Vercel Logs：`cleanup {"photos":…,"transferProofs":…,"drafts":…,"lookupFailures":…}`
-- 手動執行：`curl -H "Authorization: Bearer $CRON_SECRET" https://<網域>/api/cron/cleanup`
+- 手動執行：`curl -H "Authorization: Bearer $CRON_SECRET" https://12-street.com/api/cron/cleanup`

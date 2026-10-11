@@ -36,7 +36,7 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 ## 3. Cloudflare R2 正式 bucket
 
 - [ ] 建立正式 bucket（例如 `street12-photos`）與只有物件讀寫權限的 API token
-- [ ] 依 [r2-setup.md](r2-setup.md) 設定 CORS（`AllowedOrigins` 放正式網域與 `https://12-street.vercel.app`，**不要**放 localhost）
+- [x] 依 [r2-setup.md](r2-setup.md) 設定 CORS 與 lifecycle（`street12-photos`：`AllowedOrigins` 為 `https://12-street.com`、`https://12-street.vercel.app`，**不放** localhost）
 - [ ] 依 [r2-setup.md](r2-setup.md) 設定 Lifecycle 備援規則（`photos/` 35 天、`transfer-proofs/` 60 天）
 
 ## 4. Vercel 專案與環境變數
@@ -63,14 +63,14 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 | `NEXT_PUBLIC_BANK_ACCOUNT` | 必要 | 選填 | 結帳頁顯示的銀行轉帳資訊（換行用 `\n`，值見 [owner-pricing.md](owner-pricing.md)） |
 | `CRON_SECRET` | 必要 | 不需要 | `/api/cron/cleanup` 的驗證密鑰（16 字以上）；沒設的話 cron 一律回 401 |
 
-- [ ] `BETTER_AUTH_URL` 設成**實際對外網址**（正式網域；網域還沒綁好前先用 `https://12-street.vercel.app`），結尾不加斜線。它會決定 LINE OAuth 的 redirect URI，與 LINE 後台不一致就會登入失敗
+- [x] `BETTER_AUTH_URL` 設成**實際對外網址**（`https://12-street.com`），結尾不加斜線。它會決定 LINE OAuth 的 redirect URI，與 LINE 後台不一致就會登入失敗
 - [ ] `NEXT_PUBLIC_*` 在 **build 時**寫進前端，修改後必須重新部署才會生效
 - [ ] `DATABASE_URL` 確認用的是 `photo_app`、`MIGRATION_DATABASE_URL` 沒有出現在 Vercel
 
 ## 5. LINE Login
 
 - [ ] LINE Developers 的 LINE Login channel，Callback URL 加上（Better Auth 的 LINE 回呼路徑是 `/api/auth/callback/line`，即 `BETTER_AUTH_URL` ＋ `/api/auth/callback/line`）：
-  - `https://<正式網域>/api/auth/callback/line`
+  - `https://12-street.com/api/auth/callback/line`
   - `https://12-street.vercel.app/api/auth/callback/line`
   - 本機開發另有 `http://localhost:3000/api/auth/callback/line`
 - [ ] Channel 狀態改為 Published（未發布時只有 channel 管理者／測試者能登入）
@@ -81,8 +81,8 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 - [ ] Vercel Project Settings → Deployment Protection：Production 關閉（客人要能直接開網站；開著會被 Vercel 登入頁擋住，LINE 登入也會失敗）
 - [ ] 確認 Vercel Firewall 已有規則 `order-lookup-rate-limit`：`POST /orders/lookup`，每個 IP 60 秒 10 次（已建立，上線前確認仍在）
 - [ ] 部署 production（push 到 main 或手動 deploy）；`vercel.json` 內的 cron（`0 19 * * *`，台灣時間 03:00）會一起註冊
-- [ ] 綁定正式網域，並依 Vercel 指示設定 DNS
-- [ ] 網域生效後：`BETTER_AUTH_URL` 改成正式網址並重新部署；R2 CORS 的 `AllowedOrigins` 加入 `https://<正式網域>`；LINE Callback URL 已加（步驟 5）
+- [x] 綁定正式網域 `12-street.com`（AWS Route 53 註冊；DNS 留在 Route 53：apex A `216.198.79.1`、`64.29.17.1`，`www` CNAME 指向 Vercel，`www` 308 轉到 apex）
+- [x] 網域生效後：`BETTER_AUTH_URL` 改成正式網址並重新部署；R2 CORS 的 `AllowedOrigins` 加入 `https://12-street.com`；LINE Callback URL 已加
 
 ## 7. 上線後 Smoke Test
 
@@ -98,7 +98,7 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 - [ ] 手動呼叫 cron（沒設或帶錯密鑰應回 401）：
 
   ```bash
-  curl -H "Authorization: Bearer $CRON_SECRET" https://<網域>/api/cron/cleanup
+  curl -H "Authorization: Bearer $CRON_SECRET" https://12-street.com/api/cron/cleanup
   ```
 
   回傳 JSON 應有 `photos`、`transferProofs`、`drafts`、`lookupFailures`；Vercel Logs 搜尋 `cleanup` 應看到相同內容
