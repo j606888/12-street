@@ -67,11 +67,6 @@ const PRODUCTS = [
   },
 ];
 
-const MEMBER_TAGS = [
-  { name: "未取件", color: "yellow" },
-  { name: "BAD", color: "red" },
-];
-
 async function main() {
   const useSsl = process.env.DATABASE_SSL === "true";
   const pool = new Pool({
@@ -118,8 +113,6 @@ async function main() {
     .update(schema.products)
     .set({ active: false })
     .where(notInArray(schema.products.code, PRODUCTS.map((p) => p.code)));
-
-  await db.insert(schema.memberTags).values(MEMBER_TAGS).onConflictDoNothing();
 
   // Promote admins by LINE user ID (the account must have logged in once)
   const adminLineIds = (process.env.ADMIN_LINE_IDS ?? "")

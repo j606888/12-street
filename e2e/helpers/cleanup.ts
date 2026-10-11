@@ -69,7 +69,8 @@ async function deletePrefix(r2: S3Client, bucket: string, prefix: string) {
 /**
  * Removes only what the e2e run created: orders tracked by draft token / id /
  * "[E2E]" contact name, their R2 objects, lookup_failures for their order
- * numbers (plus the fixed nonexistent number), and the test admin user.
+ * numbers (plus the fixed nonexistent number), "[E2E]" member tags, and the
+ * test admin user.
  */
 export async function cleanupE2eData(opts: { includeAdminUser: boolean }) {
   const tracked = readTracked();
@@ -108,6 +109,11 @@ export async function cleanupE2eData(opts: { includeAdminUser: boolean }) {
       [rows.map((o) => o.id)],
     );
 
+    const tags = await pool.query(
+      `delete from member_tags where left(name, ${TEST_PREFIX.length}) = $1`,
+      [TEST_PREFIX],
+    );
+
     let users = 0;
     if (opts.includeAdminUser) {
       users =
@@ -119,6 +125,7 @@ export async function cleanupE2eData(opts: { includeAdminUser: boolean }) {
       orders: del.rowCount ?? 0,
       objects,
       lookupFailures: failures.rowCount ?? 0,
+      tags: tags.rowCount ?? 0,
       users,
     };
   } finally {

@@ -2,9 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { deleteOrderPhotos } from "@/actions/admin";
+import { TrashIcon } from "@/components/icons";
+import { btn } from "./ui";
 
 /** Two-step button: first click asks, second click deletes. */
-export function DeletePhotosButton({ orderId }: { orderId: string }) {
+export function DeletePhotosButton({
+  orderId,
+  label = "刪除照片",
+}: {
+  orderId: string;
+  label?: string;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -18,17 +26,17 @@ export function DeletePhotosButton({ orderId }: { orderId: string }) {
   }
 
   return (
-    <div className="grid gap-2 text-sm">
+    <span className="inline-grid justify-items-end gap-1.5 text-[13px]">
       {confirming ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-red-700">
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          <span className="text-danger-fg">
             確定要刪除這筆訂單的所有照片嗎？刪除後無法復原。
           </span>
           <button
             type="button"
             onClick={remove}
             disabled={pending}
-            className="rounded-lg bg-red-600 px-3 py-1.5 font-bold text-white disabled:opacity-50"
+            className={`${btn.danger} bg-danger-fg border-transparent text-white hover:bg-[#8f1b16]`}
           >
             {pending ? "刪除中…" : "確定刪除"}
           </button>
@@ -36,11 +44,11 @@ export function DeletePhotosButton({ orderId }: { orderId: string }) {
             type="button"
             onClick={() => setConfirming(false)}
             disabled={pending}
-            className="rounded-lg border px-3 py-1.5"
+            className={btn.secondary}
           >
             取消
           </button>
-        </div>
+        </span>
       ) : (
         <button
           type="button"
@@ -48,12 +56,13 @@ export function DeletePhotosButton({ orderId }: { orderId: string }) {
             setMessage(null);
             setConfirming(true);
           }}
-          className="w-fit rounded-lg border border-red-300 px-3 py-1.5 text-red-700"
+          className={btn.danger}
         >
-          刪除照片
+          <TrashIcon className="size-3.5" />
+          {label}
         </button>
       )}
-      {message && <p className="text-neutral-600">{message}</p>}
-    </div>
+      {message && <span className="text-ink-3">{message}</span>}
+    </span>
   );
 }

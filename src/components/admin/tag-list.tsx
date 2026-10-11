@@ -1,18 +1,18 @@
 import type { Tag } from "@/lib/admin";
-import { tagTone } from "./tag-tone";
 
+export const TAG_CHIP =
+  "inline-flex h-6 items-center rounded-md bg-admin-chip px-2 text-xs font-medium text-ink-2";
+
+/** Read-only member tags, shown next to the customer's name. */
 export function TagList({ tags }: { tags: Tag[] }) {
   if (!tags.length) return null;
   return (
-    <span className="inline-flex flex-wrap gap-1">
+    <>
       {tags.map((t) => (
-        <span
-          key={t.id}
-          className={`rounded-full border px-2 py-0.5 text-xs ${tagTone(t.color)}`}
-        >
+        <span key={t.id} className={TAG_CHIP}>
           {t.name}
         </span>
       ))}
-    </span>
+    </>
   );
 }

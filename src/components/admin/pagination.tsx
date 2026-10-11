@@ -1,20 +1,24 @@
 import Link from "next/link";
 import { PAGE_SIZE } from "@/lib/admin";
+import { btn } from "./ui";
 
-/** Previous/next links that keep the other search params. */
+/** Table footer: "第 1–50 筆，共 N 筆" plus previous/next links that keep the other params. */
 export function Pagination({
   path,
   params,
   page,
   total,
+  unit = "筆",
 }: {
   path: string;
   params: Record<string, string | number | undefined>;
   page: number;
   total: number;
+  unit?: string;
 }) {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  if (pages === 1) return null;
+  const from = Math.min(total, (page - 1) * PAGE_SIZE + 1);
+  const to = Math.min(total, page * PAGE_SIZE);
 
   const href = (p: number) => {
     const qs = new URLSearchParams();
@@ -26,24 +30,37 @@ export function Pagination({
     return s ? `${path}?${s}` : path;
   };
 
+  const off = `${btn.secondary} pointer-events-none text-[#a3a8b1]`;
+
   return (
-    <nav className="flex items-center justify-center gap-4 text-sm">
-      {page > 1 ? (
-        <Link href={href(page - 1)} className="py-2.5 text-sky-700 underline">
-          上一頁
-        </Link>
-      ) : (
-        <span className="text-neutral-300">上一頁</span>
-      )}
-      <span className="text-neutral-600">
-        第 {page} / {pages} 頁（共 {total} 筆）
+    <nav
+      aria-label="分頁"
+      className="border-admin-line-soft text-ink-3 flex flex-wrap items-center gap-3 border-t px-5 py-3 text-[13px]"
+    >
+      <span className="flex-1">
+        第 {from}–{to} {unit}，共 {total} {unit}
       </span>
-      {page < pages ? (
-        <Link href={href(page + 1)} className="py-2.5 text-sky-700 underline">
-          下一頁
-        </Link>
-      ) : (
-        <span className="text-neutral-300">下一頁</span>
+      {pages > 1 && (
+        <>
+          {page > 1 ? (
+            <Link href={href(page - 1)} className={btn.secondary}>
+              上一頁
+            </Link>
+          ) : (
+            <span aria-disabled="true" className={off}>
+              上一頁
+            </span>
+          )}
+          {page < pages ? (
+            <Link href={href(page + 1)} className={btn.secondary}>
+              下一頁
+            </Link>
+          ) : (
+            <span aria-disabled="true" className={off}>
+              下一頁
+            </span>
+          )}
+        </>
       )}
     </nav>
   );

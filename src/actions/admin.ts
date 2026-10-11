@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, notExists, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import type { z } from "zod";
 import { loadOrderPhotos } from "@/lib/admin";
@@ -9,13 +9,14 @@ import { purgePhotoRows } from "@/lib/cleanup";
 import { presignGet } from "@/lib/r2";
 import { getAdmin } from "@/lib/session";
 import {
+  addMemberTagInput,
   orderIdInput,
-  setMemberTagInput,
+  removeMemberTagInput,
   updateOrderStatusInput,
   updatePaymentStatusInput,
 } from "@/lib/validators/admin";
 import { zipEntryNames } from "@/lib/zip-names";
-import { orders, photos, userTags } from "@/db/schema";
+import { memberTags, orders, photos, userTags } from "@/db/schema";
 
 type Result<T extends object = object> =
   ({ ok: true } & T) | { ok: false; error: string };
@@ -124,32 +125,67 @@ export async function deleteOrderPhotos(
   return { ok: true, deleted };
 }
 
-export async function setMemberTag(input: unknown): Promise<Result> {
+/** Tags a member; a new name creates the tag, an existing one is reused. */
+export async function addMemberTag(
+  input: unknown,
+): Promise<Result<{ tag: { id: number; name: string } }>> {
   if (!(await getAdmin())) return FORBIDDEN;
-  const { data, error } = parse(setMemberTagInput, input);
+  const { data, error } = parse(addMemberTagInput, input);
   if (!data) return { ok: false, error };
 
   try {
-    if (data.on) {
-      await db
+    const tag = await db.transaction(async (tx) => {
+      // The no-op update makes RETURNING give back an existing tag's id too
+      const [tag] = await tx
+        .insert(memberTags)
+        .values({ name: data.name })
+        .onConflictDoUpdate({
+          target: memberTags.name,
+          set: { name: data.name },
+        })
+        .returning({ id: memberTags.id, name: memberTags.name });
+      await tx
         .insert(userTags)
-        .values({ userId: data.userId, tagId: data.tagId })
+        .values({ userId: data.userId, tagId: tag.id })
         .onConflictDoNothing();
-    } else {
-      await db
-        .delete(userTags)
-        .where(
-          and(eq(userTags.userId, data.userId), eq(userTags.tagId, data.tagId)),
-        );
-    }
+      return tag;
+    });
+    refresh();
+    return { ok: true, tag };
   } catch (err) {
-    // Unknown user or tag id (foreign key violation)
+    // Unknown user id, or the tag was dropped by a concurrent removal
     const e = err as { code?: string; cause?: { code?: string } };
     if ((e.cause?.code ?? e.code) === "23503") {
-      return { ok: false, error: "找不到會員或標籤" };
+      return { ok: false, error: "儲存失敗，請重新整理後再試一次" };
     }
     throw err;
   }
+}
+
+/** Untags a member, and drops the tag once nobody has it. */
+export async function removeMemberTag(input: unknown): Promise<Result> {
+  if (!(await getAdmin())) return FORBIDDEN;
+  const { data, error } = parse(removeMemberTagInput, input);
+  if (!data) return { ok: false, error };
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(userTags)
+      .where(
+        and(eq(userTags.userId, data.userId), eq(userTags.tagId, data.tagId)),
+      );
+    await tx.delete(memberTags).where(
+      and(
+        eq(memberTags.id, data.tagId),
+        notExists(
+          tx
+            .select({ one: sql`1` })
+            .from(userTags)
+            .where(eq(userTags.tagId, data.tagId)),
+        ),
+      ),
+    );
+  });
   refresh();
   return { ok: true };
 }

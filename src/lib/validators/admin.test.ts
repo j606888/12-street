@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { firstParam, memberFilterInput, orderFilterInput } from "./admin";
+import {
+  addMemberTagInput,
+  firstParam,
+  memberFilterInput,
+  orderFilterInput,
+  photoViewInput,
+} from "./admin";
 
 describe("orderFilterInput", () => {
   it("keeps valid filters", () => {
     expect(
       orderFilterInput.parse({
         payment: "pending_review",
-        status: "ready",
+        tab: "ready",
         q: " 0912 ",
         page: "3",
       }),
     ).toEqual({
       payment: "pending_review",
-      status: "ready",
+      tab: "ready",
       q: "0912",
       page: 3,
     });
@@ -20,8 +26,42 @@ describe("orderFilterInput", () => {
 
   it("drops invalid values instead of failing", () => {
     expect(
-      orderFilterInput.parse({ payment: "free", status: "draft", page: "-2" }),
-    ).toEqual({ payment: undefined, status: undefined, page: 1 });
+      orderFilterInput.parse({ payment: "free", tab: "draft", page: "-2" }),
+    ).toEqual({ tab: "todo", payment: undefined, page: 1 });
+  });
+
+  it("defaults to the todo tab, or all orders when searching", () => {
+    expect(orderFilterInput.parse({}).tab).toBe("todo");
+    expect(orderFilterInput.parse({ q: "0912" }).tab).toBe("all");
+    expect(orderFilterInput.parse({ member: "u1" }).tab).toBe("all");
+    expect(orderFilterInput.parse({ payment: "paid" }).tab).toBe("all");
+    expect(orderFilterInput.parse({ q: "0912", tab: "ready" }).tab).toBe(
+      "ready",
+    );
+  });
+});
+
+describe("photoViewInput", () => {
+  it("falls back to soonest expiry", () => {
+    expect(photoViewInput.parse("big")).toBe("big");
+    expect(photoViewInput.parse("nope")).toBe("soon");
+    expect(photoViewInput.parse(undefined)).toBe("soon");
+  });
+});
+
+describe("addMemberTagInput", () => {
+  const parse = (name: string) =>
+    addMemberTagInput.safeParse({ userId: "u1", name });
+
+  it("trims the name", () => {
+    expect(parse("  常客 ").data?.name).toBe("常客");
+  });
+
+  it("rejects empty, long or multi-line names", () => {
+    expect(parse("   ").success).toBe(false);
+    expect(parse("一".repeat(21)).success).toBe(false);
+    expect(parse("a\nb").success).toBe(false);
+    expect(parse("一".repeat(20)).success).toBe(true);
   });
 });
 

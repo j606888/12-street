@@ -16,11 +16,16 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { db } from "@/lib/db";
-import type { MemberFilter, OrderFilter } from "@/lib/validators/admin";
+import type {
+  MemberFilter,
+  OrderFilter,
+  OrderTab,
+} from "@/lib/validators/admin";
 import { groupFolder, idPhotoFolder, type ZipPhoto } from "@/lib/zip-names";
 import {
   memberTags,
   orderGroups,
+  orderItems,
   orders,
   photos,
   printSizes,
@@ -34,7 +39,7 @@ export const PAGE_SIZE = 50;
 export type Tag = { id: number; name: string; color: string };
 
 export function listTags(): Promise<Tag[]> {
-  return db.select().from(memberTags).orderBy(asc(memberTags.id));
+  return db.select().from(memberTags).orderBy(asc(memberTags.name));
 }
 
 /** Tags of each user, keyed by user id. */
@@ -53,7 +58,7 @@ export async function tagsByUser(
     .from(userTags)
     .innerJoin(memberTags, eq(memberTags.id, userTags.tagId))
     .where(inArray(userTags.userId, userIds))
-    .orderBy(asc(memberTags.id));
+    .orderBy(asc(userTags.createdAt));
   for (const { userId, ...tag } of rows) {
     map.set(userId, [...(map.get(userId) ?? []), tag]);
   }
@@ -65,10 +70,88 @@ function likeTerm(q: string) {
   return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 }
 
+/** Which orders each tab of the order list shows. */
+function tabCondition(tab: OrderTab): SQL | undefined {
+  switch (tab) {
+    case "todo":
+      return and(
+        ne(orders.status, "cancelled"),
+        or(
+          eq(orders.status, "submitted"),
+          eq(orders.paymentStatus, "pending_review"),
+        ),
+      );
+    case "all":
+      return undefined;
+    default:
+      return eq(orders.status, tab);
+  }
+}
+
+/** Short line items per order: "4×6 ×36・護貝、證件照 大頭兩吋 ×2 組". */
+async function orderSummaries(orderIds: string[]) {
+  const map = new Map<string, string[]>();
+  if (!orderIds.length) return new Map<string, string>();
+  const [groups, items, custom] = await Promise.all([
+    db
+      .select({
+        orderId: orderGroups.orderId,
+        label: printSizes.label,
+        laminate: orderGroups.laminate,
+        prints: sum(photos.quantity).mapWith(Number),
+      })
+      .from(orderGroups)
+      .innerJoin(printSizes, eq(printSizes.id, orderGroups.printSizeId))
+      .leftJoin(photos, eq(photos.groupId, orderGroups.id))
+      .where(inArray(orderGroups.orderId, orderIds))
+      .groupBy(orderGroups.id, printSizes.id)
+      .orderBy(asc(orderGroups.sortOrder), asc(orderGroups.createdAt)),
+    db
+      .select({
+        orderId: orderItems.orderId,
+        name: orderItems.name,
+        quantity: orderItems.quantity,
+        isIdPhoto: sql<boolean>`${orderItems.photoId} is not null`,
+      })
+      .from(orderItems)
+      .where(inArray(orderItems.orderId, orderIds)),
+    db
+      .select({ orderId: photos.orderId, n: count() })
+      .from(photos)
+      .where(and(inArray(photos.orderId, orderIds), eq(photos.kind, "custom")))
+      .groupBy(photos.orderId),
+  ]);
+  const add = (id: string, part: string) =>
+    map.set(id, [...(map.get(id) ?? []), part]);
+  for (const g of groups) {
+    add(g.orderId, `${g.label} ×${g.prints ?? 0}${g.laminate ? "・護貝" : ""}`);
+  }
+  for (const i of items) {
+    add(i.orderId, `${i.name} ×${i.quantity}${i.isIdPhoto ? " 組" : ""}`);
+  }
+  for (const c of custom) add(c.orderId, `客製化 ${c.n} 張`);
+  return new Map([...map].map(([id, parts]) => [id, parts.join("、")]));
+}
+
+const orderListColumns = {
+  id: orders.id,
+  orderNo: orders.orderNo,
+  status: orders.status,
+  paymentStatus: orders.paymentStatus,
+  paymentMethod: orders.paymentMethod,
+  totalAmount: orders.totalAmount,
+  submittedAt: orders.submittedAt,
+  contactName: orders.contactName,
+  contactPhone: orders.contactPhone,
+  userId: orders.userId,
+};
+
 export async function listOrders(filter: OrderFilter) {
-  const conds: (SQL | undefined)[] = [ne(orders.status, "draft")];
+  const conds: (SQL | undefined)[] = [
+    ne(orders.status, "draft"),
+    tabCondition(filter.tab),
+  ];
   if (filter.payment) conds.push(eq(orders.paymentStatus, filter.payment));
-  if (filter.status) conds.push(eq(orders.status, filter.status));
   if (filter.member) conds.push(eq(orders.userId, filter.member));
   if (filter.q) {
     const term = likeTerm(filter.q);
@@ -85,18 +168,7 @@ export async function listOrders(filter: OrderFilter) {
 
   const [rows, [{ total }]] = await Promise.all([
     db
-      .select({
-        id: orders.id,
-        orderNo: orders.orderNo,
-        status: orders.status,
-        paymentStatus: orders.paymentStatus,
-        paymentMethod: orders.paymentMethod,
-        totalAmount: orders.totalAmount,
-        submittedAt: orders.submittedAt,
-        contactName: orders.contactName,
-        contactPhone: orders.contactPhone,
-        userId: orders.userId,
-      })
+      .select(orderListColumns)
       .from(orders)
       .where(where)
       .orderBy(desc(orders.submittedAt))
@@ -105,40 +177,77 @@ export async function listOrders(filter: OrderFilter) {
     db.select({ total: count() }).from(orders).where(where),
   ]);
 
-  const tags = await tagsByUser([
-    ...new Set(rows.flatMap((r) => (r.userId ? [r.userId] : []))),
+  const [tags, summaries] = await Promise.all([
+    tagsByUser([...new Set(rows.flatMap((r) => (r.userId ? [r.userId] : [])))]),
+    orderSummaries(rows.map((r) => r.id)),
   ]);
   return {
     rows: rows.map((r) => ({
       ...r,
       tags: r.userId ? (tags.get(r.userId) ?? []) : [],
+      summary: summaries.get(r.id) ?? "",
     })),
     total,
   };
 }
 
-/** Orders per status, for the admin home page. */
-export async function orderCounts() {
-  const [byPayment, byStatus] = await Promise.all([
-    db
-      .select({ key: orders.paymentStatus, n: count() })
-      .from(orders)
-      .where(and(ne(orders.status, "draft"), ne(orders.status, "cancelled")))
-      .groupBy(orders.paymentStatus),
-    db
-      .select({ key: orders.status, n: count() })
-      .from(orders)
-      .where(ne(orders.status, "draft"))
-      .groupBy(orders.status),
-  ]);
-  const pick = <K extends string>(rows: { key: K; n: number }[], k: K) =>
-    rows.find((r) => r.key === k)?.n ?? 0;
-  return {
-    pendingReview: pick(byPayment, "pending_review"),
-    submitted: pick(byStatus, "submitted"),
-    printing: pick(byStatus, "printing"),
-    ready: pick(byStatus, "ready"),
-  };
+/** Orders per tab of the order list, plus the payments waiting for review. */
+export async function orderCounts(): Promise<
+  Record<OrderTab | "pendingReview" | "submitted", number>
+> {
+  const n = (cond: SQL | undefined) =>
+    sql<number>`count(*) filter (where ${cond ?? sql`true`})`.mapWith(Number);
+  const [row] = await db
+    .select({
+      todo: n(tabCondition("todo")),
+      printing: n(tabCondition("printing")),
+      ready: n(tabCondition("ready")),
+      picked_up: n(tabCondition("picked_up")),
+      cancelled: n(tabCondition("cancelled")),
+      all: count(),
+      submitted: n(eq(orders.status, "submitted")),
+      pendingReview: n(
+        and(
+          ne(orders.status, "cancelled"),
+          eq(orders.paymentStatus, "pending_review"),
+        ),
+      ),
+    })
+    .from(orders)
+    .where(ne(orders.status, "draft"));
+  return row;
+}
+
+/** Bank transfer / LINE MONEY payments the shop still has to check. */
+export function pendingPayments() {
+  return db
+    .select({
+      ...orderListColumns,
+      bankLast5: orders.bankLast5,
+      transferProofKey: orders.transferProofKey,
+    })
+    .from(orders)
+    .where(
+      and(
+        ne(orders.status, "draft"),
+        ne(orders.status, "cancelled"),
+        eq(orders.paymentStatus, "pending_review"),
+      ),
+    )
+    .orderBy(asc(orders.submittedAt))
+    .limit(20);
+}
+
+/** Newest submitted orders that haven't gone to print yet. */
+export async function newOrders(limit: number) {
+  const rows = await db
+    .select(orderListColumns)
+    .from(orders)
+    .where(eq(orders.status, "submitted"))
+    .orderBy(desc(orders.submittedAt))
+    .limit(limit);
+  const summaries = await orderSummaries(rows.map((r) => r.id));
+  return rows.map((r) => ({ ...r, summary: summaries.get(r.id) ?? "" }));
 }
 
 export type AdminPhoto = {
@@ -215,6 +324,14 @@ export async function loadOrderPhotos(orderId: string): Promise<AdminPhoto[]> {
   ];
 }
 
+export async function memberName(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ name: user.name })
+    .from(user)
+    .where(eq(user.id, userId));
+  return row?.name ?? null;
+}
+
 export async function listMembers(filter: MemberFilter) {
   const conds: (SQL | undefined)[] = [];
   if (filter.tag) {
@@ -273,6 +390,7 @@ export function listStoredPhotos() {
       orderNo: orders.orderNo,
       status: orders.status,
       contactName: orders.contactName,
+      contactPhone: orders.contactPhone,
       photoCount: count(photos.id),
       bytes: sum(photos.sizeBytes).mapWith(Number),
       expiresAt: min(photos.expiresAt),

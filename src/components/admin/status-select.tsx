@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { updateOrderStatus, updatePaymentStatus } from "@/actions/admin";
+import { field as fieldClass } from "./ui";
 
 type Props = {
   orderId: string;
@@ -34,13 +35,13 @@ export function StatusSelect({ orderId, field, value, options, label }: Props) {
   }
 
   return (
-    <label className="grid gap-1 text-sm">
-      <span className="text-neutral-600">{label}</span>
+    <label className="grid gap-1 text-[13px]">
+      <span className="text-ink-3">{label}</span>
       <select
         value={current}
         disabled={pending}
         onChange={(e) => save(e.target.value)}
-        className="rounded-lg border bg-white px-3 py-2 text-base disabled:opacity-50"
+        className={`${fieldClass} disabled:opacity-50`}
       >
         {Object.entries(options).map(([k, v]) => (
           <option key={k} value={k}>
@@ -48,8 +49,8 @@ export function StatusSelect({ orderId, field, value, options, label }: Props) {
           </option>
         ))}
       </select>
-      {pending && <span className="text-neutral-400">儲存中…</span>}
-      {error && <span className="text-red-600">{error}</span>}
+      {pending && <span className="text-ink-4">儲存中…</span>}
+      {error && <span className="text-danger-fg">{error}</span>}
     </label>
   );
 }

@@ -9,6 +9,7 @@ import { FIXTURES, startOrderWithPhotos } from "./helpers/order";
 import {
   ADMIN_STORAGE_STATE,
   NONEXISTENT_ORDER_NO,
+  TEST_PREFIX,
   trackDraftCookie,
   trackOrder,
 } from "./helpers/state";
@@ -48,11 +49,12 @@ test("guest places an order and looks it up from a fresh browser", async ({
 }) => {
   await startOrderWithPhotos(page, FIXTURES);
   await trackDraftCookie(page.context());
+  await page.getByRole("button", { name: "下一步" }).click();
 
   await page.getByLabel(/姓名/).fill("[E2E] 訪客");
   await page.getByLabel(/手機/).fill(PHONE);
   await page.getByLabel("取件時付現金").check();
-  await page.getByRole("button", { name: "確認送出訂單" }).click();
+  await page.getByRole("button", { name: "送出訂單" }).click();
 
   await page.waitForURL(/\/order\/complete\?id=/);
   orderId = new URL(page.url()).searchParams.get("id")!;
@@ -62,7 +64,9 @@ test("guest places an order and looks it up from a fresh browser", async ({
   expect(no).toMatch(/^P\d{8}-\d{4}$/);
   orderNo = no;
   trackOrder(orderId, orderNo);
-  await expect(page.getByText("訂單已送出，謝謝你！")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "謝謝！訂單收到了" }),
+  ).toBeVisible();
 
   // Fresh browser: wrong phone / nonexistent number give the same generic error
   lookupContext = await newGuestContext(browser);
@@ -80,7 +84,7 @@ test("guest places an order and looks it up from a fresh browser", async ({
     lookupPage.getByRole("heading", { name: orderNo }),
   ).toBeVisible();
   await expect(lookupPage.getByText("[E2E] 訪客")).toBeVisible();
-  await expect(lookupPage.getByText("訂單狀態：已送出")).toBeVisible();
+  await expect(lookupPage.getByLabel("訂單狀態：已送出")).toBeVisible();
   await expect(lookupPage.getByText("付款方式：取件時付現金")).toBeVisible();
 });
 
@@ -109,38 +113,40 @@ test("admin finds the order, updates statuses, downloads the ZIP and deletes pho
     });
     const page = await ctx.newPage();
 
+    // A search covers every tab; the row's "next step" button moves it along
     await page.goto("/admin/orders");
-    await page.getByLabel("訂單狀態").selectOption({ label: "已送出" });
     await page.getByLabel("搜尋").fill(orderNo);
     await page.getByRole("button", { name: "篩選" }).click();
-    await page.getByRole("link", { name: orderNo }).click();
+    const row = page.getByRole("row", { name: new RegExp(orderNo) });
+    await expect(row.getByText("已送出")).toBeVisible();
+    // Cash on pickup: starting production doesn't ask about the payment
+    await row.getByRole("button", { name: "開始製作" }).click();
+    await expect(row.getByText("製作中")).toBeVisible();
+
+    await row.getByRole("link", { name: orderNo }).click();
     await page.waitForURL(`**/admin/orders/${orderId}`);
     await expect(page.getByRole("heading", { name: orderNo })).toBeVisible();
 
-    const payment = page.locator(
-      'label:has-text("付款狀態") select:not([name])',
-    );
-    const status = page.locator(
-      'label:has-text("訂單狀態") select:not([name])',
-    );
-    await payment.selectOption({ label: "已付款" });
-    await expect(payment).toBeEnabled();
-    await expect(page.getByText("儲存中…")).toHaveCount(0);
-    await status.selectOption({ label: "可取件" });
-    await expect(status).toBeEnabled();
-    await expect(page.getByText("儲存中…")).toHaveCount(0);
+    await page.getByRole("button", { name: "標記已付款" }).click();
+    await expect(page.getByRole("button", { name: "復原" })).toBeVisible();
+    await page.getByRole("button", { name: "標記可取件" }).click();
+    await expect(
+      page.getByRole("button", { name: "客人已取件" }),
+    ).toBeVisible();
 
     await page.reload();
-    await expect(payment).toHaveValue("paid");
-    await expect(status).toHaveValue("ready");
+    await expect(page.getByText(/已確認收款：/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "客人已取件" }),
+    ).toBeVisible();
 
     // Customer side sees the new statuses
     await lookupPage.reload();
-    await expect(lookupPage.getByText("訂單狀態：可取件")).toBeVisible();
+    await expect(lookupPage.getByLabel("訂單狀態：可取件")).toBeVisible();
     await expect(lookupPage.getByText("付款狀態：已付款")).toBeVisible();
 
     // ZIP: stream through the stubbed save picker, then read the central directory
-    await page.getByRole("button", { name: "下載全部照片（ZIP）" }).click();
+    await page.getByRole("button", { name: "下載照片 ZIP" }).click();
     await page.waitForFunction(
       () => (window as unknown as { __zipClosed: boolean }).__zipClosed,
     );
@@ -181,6 +187,39 @@ test("admin finds the order, updates statuses, downloads the ZIP and deletes pho
     await expect(
       page.getByRole("heading", { name: "照片（0 張，0 B）" }),
     ).toBeVisible();
+  } finally {
+    await ctx.close();
+  }
+});
+
+test("admin adds a free-text tag next to a member's name and removes it", async ({
+  browser,
+}) => {
+  const ctx = await browser.newContext({ storageState: ADMIN_STORAGE_STATE });
+  const tag = `${TEST_PREFIX} 常客`;
+  try {
+    const page = await ctx.newPage();
+    await page.goto(`/admin/members?q=${encodeURIComponent(TEST_PREFIX)}`);
+    const row = page
+      .getByRole("row")
+      .filter({ hasText: `${TEST_PREFIX} Admin` });
+
+    await row.getByRole("button", { name: "＋ 標籤" }).click();
+    await row.getByLabel("新增標籤").fill(tag);
+    await row.getByLabel("新增標籤").press("Enter");
+    const remove = row.getByRole("button", { name: `移除標籤 ${tag}` });
+    await expect(remove).toBeEnabled();
+
+    // Saved: still there after a reload, and offered as a filter
+    await page.reload();
+    await expect(remove).toBeVisible();
+    await expect(page.getByRole("link", { name: tag })).toBeVisible();
+
+    // Removing the last use drops the tag altogether
+    await remove.click();
+    await expect(remove).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole("link", { name: tag })).toHaveCount(0);
   } finally {
     await ctx.close();
   }

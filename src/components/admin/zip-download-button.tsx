@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { makeZip } from "client-zip";
 import { getZipFiles } from "@/actions/admin";
+import { DownloadIcon } from "@/components/icons";
+import { btn } from "./ui";
 
 type SaveFilePicker = (options: {
   suggestedName: string;
@@ -16,9 +18,12 @@ type SaveFilePicker = (options: {
 export function ZipDownloadButton({
   orderId,
   fileName,
+  variant = "button",
 }: {
   orderId: string;
   fileName: string;
+  /** "icon": a square icon-only button for table rows */
+  variant?: "button" | "large" | "icon";
 }) {
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,17 +88,34 @@ export function ZipDownloadButton({
     }
   }
 
+  const icon = variant === "icon";
   return (
-    <div className="grid gap-1">
+    <span className="inline-grid justify-items-end gap-1 align-middle">
       <button
         type="button"
         onClick={download}
         disabled={busy}
-        className="w-fit rounded-lg bg-neutral-900 px-4 py-2 font-bold text-white disabled:opacity-50"
+        aria-label={icon ? "下載照片 ZIP" : undefined}
+        title={icon ? "下載照片 ZIP" : undefined}
+        className={`${btn.secondary} ${
+          icon && !busy
+            ? "w-9 px-0"
+            : variant === "large"
+              ? "h-10 px-3.5 text-sm"
+              : ""
+        }`}
       >
-        {progress ?? "下載全部照片（ZIP）"}
+        {(!busy || !icon) && <DownloadIcon className="size-4" />}
+        {icon ? busy && progress : (progress ?? "下載照片 ZIP")}
       </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-    </div>
+      {error && (
+        <span
+          role="alert"
+          className="text-danger-fg max-w-72 text-right text-xs"
+        >
+          {error}
+        </span>
+      )}
+    </span>
   );
 }
