@@ -61,6 +61,8 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
 -- 只有 migrator 可以在 public 建立物件
 SELECT current_database() AS dbname \gset
+-- 預設 PUBLIC 可以連任何資料庫；這台 RDS 也放其他專案，只讓需要的角色連這個 DB
+REVOKE CONNECT, TEMPORARY ON DATABASE :"dbname" FROM PUBLIC;
 GRANT CONNECT ON DATABASE :"dbname" TO photo_migrator, photo_app;
 
 -- migrator 擁有 public schema（PG15+ 預設擁有者是 pg_database_owner，這裡明確交給 migrator）

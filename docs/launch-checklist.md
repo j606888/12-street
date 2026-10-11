@@ -12,7 +12,8 @@
 - [ ] 開啟自動備份（保留 7 天）與刪除保護
 - [ ] Security Group：Vercel 沒有固定 IP，5432 對 `0.0.0.0/0` 開放，靠強制 SSL＋強密碼防護。若要鎖 IP，需改用 Vercel Static IPs（Pro 方案）或之後加 RDS Proxy
 - [ ] 本機下載 RDS CA bundle 到 `certs/rds-global-bundle.pem`（已存在則略過）
-- [ ] 用 master 帳號執行 [rds-setup.sql](rds-setup.sql)（指令與密碼參數寫在檔案開頭註解）；兩個密碼用密碼管理工具產生，不要 commit
+- [ ] 在自己的終端機執行 `RDS_HOST=<端點> scripts/rds-bootstrap.sh`：建立 `street12` 資料庫、跑 [rds-setup.sql](rds-setup.sql)、產生兩個角色的亂數密碼，連線字串寫到 `.env.rds.local`（不 commit、不會印出密碼）。只需要輸入 master 密碼
+- [ ] Vercel 函式區域：`vercel.json` 已設 `regions: ["sin1"]`（新加坡，和 RDS 同區）
 - [ ] 確認腳本最後的檢查輸出：兩個角色 `can_login = t`；`photo_app` 對 public `USAGE = t`、`CREATE = f`，對 drizzle 兩者皆 `f`
 
 ## 2. 執行 Migration 與 Seed（從本機對 RDS 執行）
