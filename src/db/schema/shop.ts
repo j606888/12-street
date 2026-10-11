@@ -14,7 +14,9 @@ import {
 import { user } from "./auth";
 
 const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow()
@@ -66,7 +68,11 @@ export const paymentMethod = pgEnum("payment_method", [
   "bank_transfer",
 ]);
 
-export const paymentStatus = pgEnum("payment_status", ["unpaid", "pending_review", "paid"]);
+export const paymentStatus = pgEnum("payment_status", [
+  "unpaid",
+  "pending_review",
+  "paid",
+]);
 
 export const orders = pgTable(
   "orders",
@@ -118,13 +124,19 @@ export const orderGroups = pgTable(
     laminate: boolean("laminate").notNull().default(false), // 護貝 every print in the group
     laminationUnitPrice: integer("lamination_unit_price"), // snapshot taken on submit
     sortOrder: integer("sort_order").notNull().default(0),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index("order_groups_order_idx").on(t.orderId)],
 );
 
 export const photoKind = pgEnum("photo_kind", ["print", "custom", "id_photo"]);
-export const photoStatus = pgEnum("photo_status", ["pending", "uploaded", "deleted"]);
+export const photoStatus = pgEnum("photo_status", [
+  "pending",
+  "uploaded",
+  "deleted",
+]);
 
 export const photos = pgTable(
   "photos",
@@ -133,7 +145,9 @@ export const photos = pgTable(
     orderId: uuid("order_id")
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
-    groupId: uuid("group_id").references(() => orderGroups.id, { onDelete: "cascade" }),
+    groupId: uuid("group_id").references(() => orderGroups.id, {
+      onDelete: "cascade",
+    }),
     kind: photoKind("kind").notNull().default("print"),
     // ID-photo set chosen for kind = 'id_photo' (quantity = number of sets)
     productId: integer("product_id").references(() => products.id),
@@ -145,7 +159,9 @@ export const photos = pgTable(
     status: photoStatus("status").notNull().default("pending"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [
     index("photos_order_idx").on(t.orderId),
@@ -168,7 +184,9 @@ export const orderItems = pgTable(
     name: text("name").notNull(), // snapshot
     unitPrice: integer("unit_price").notNull(), // snapshot
     quantity: integer("quantity").notNull(),
-    photoId: uuid("photo_id").references(() => photos.id, { onDelete: "set null" }), // ID-photo source
+    photoId: uuid("photo_id").references(() => photos.id, {
+      onDelete: "set null",
+    }), // ID-photo source
   },
   (t) => [index("order_items_order_idx").on(t.orderId)],
 );
@@ -190,10 +208,25 @@ export const userTags = pgTable(
     tagId: integer("tag_id")
       .notNull()
       .references(() => memberTags.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.tagId] })],
 );
+
+// Shop-only notes about a member. Kept out of `user` so they never reach the
+// customer through the Better Auth session.
+export const memberNotes = pgTable("member_notes", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  note: text("note").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
 
 // Failed guest lookups, keyed by the order number tried; used to throttle guessing
 export const lookupFailures = pgTable(
@@ -201,7 +234,9 @@ export const lookupFailures = pgTable(
   {
     id: serial("id").primaryKey(),
     orderNo: text("order_no").notNull(), // normalized, may not exist
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (t) => [index("lookup_failures_order_no_idx").on(t.orderNo, t.createdAt)],
 );

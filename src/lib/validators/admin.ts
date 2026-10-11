@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { phoneSchema } from "./order";
 
 export const ADMIN_ORDER_STATUSES = [
   "submitted",
@@ -79,6 +80,30 @@ export const addMemberTagInput = z.object({
 export const removeMemberTagInput = z.object({
   userId,
   tagId: z.int().positive(),
+});
+
+export const MEMBER_NOTE_MAX = 2000;
+
+export const updateMemberInput = z.object({
+  userId,
+  name: z.string().trim().min(1, "請輸入姓名").max(50, "姓名最多 50 個字"),
+  // Blank clears the phone
+  phone: z.union([
+    z
+      .string()
+      .trim()
+      .length(0)
+      .transform(() => null),
+    phoneSchema,
+  ]),
+});
+export const updateMemberNoteInput = z.object({
+  userId,
+  // Blank deletes the note
+  note: z
+    .string()
+    .trim()
+    .max(MEMBER_NOTE_MAX, `備註最多 ${MEMBER_NOTE_MAX} 個字`),
 });
 
 /** First value of a searchParams entry. */

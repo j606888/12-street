@@ -105,3 +105,27 @@ export async function listKeys(prefix: string): Promise<string[]> {
   } while (token);
   return keys;
 }
+
+/** Cloudflare R2's free storage allowance (10 GB-month). */
+export const R2_FREE_BYTES = 10 * 1024 ** 3;
+
+/** Total size and object count of the whole bucket (paginated listing). */
+export async function bucketUsage(): Promise<{
+  bytes: number;
+  objects: number;
+}> {
+  let bytes = 0;
+  let objects = 0;
+  let token: string | undefined;
+  do {
+    const res = await r2.send(
+      new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: token }),
+    );
+    for (const o of res.Contents ?? []) {
+      bytes += o.Size ?? 0;
+      objects++;
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+  return { bytes, objects };
+}

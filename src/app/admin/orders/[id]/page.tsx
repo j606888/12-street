@@ -17,12 +17,17 @@ import {
   OrderStatusBadge,
   PaymentStatusBadge,
 } from "@/components/admin/status-badges";
-import { Card } from "@/components/admin/ui";
+import { btn, Card } from "@/components/admin/ui";
 import { ZipDownloadButton } from "@/components/admin/zip-download-button";
-import { ArrowLeftIcon, ChevronRightIcon, PhoneIcon } from "@/components/icons";
+import {
+  ArrowLeftIcon,
+  ChevronRightIcon,
+  NoteIcon,
+  PhoneIcon,
+} from "@/components/icons";
 import { OrderLines } from "@/components/order/order-detail";
 import { PAYMENT_LABEL } from "@/components/payment-details";
-import { listTags, loadOrderPhotos, tagsByUser } from "@/lib/admin";
+import { listTags, loadOrderPhotos, memberNote, tagsByUser } from "@/lib/admin";
 import { db } from "@/lib/db";
 import { formatBytes, formatNtd, formatTaipeiTime } from "@/lib/format";
 import {
@@ -121,10 +126,11 @@ async function AdminOrder({
   if (!row || row.order.status === "draft") notFound();
   const { order, member } = row;
 
-  const [photoList, allTags, memberTags, proofUrl] = await Promise.all([
+  const [photoList, allTags, memberTags, note, proofUrl] = await Promise.all([
     loadOrderPhotos(order.id),
     listTags(),
     member ? tagsByUser([member.id]) : null,
+    member ? memberNote(member.id) : null,
     order.transferProofKey ? presignGet(order.transferProofKey) : null,
   ]);
   const stored = photoList.filter((p) => p.status !== "deleted");
@@ -312,7 +318,19 @@ async function AdminOrder({
                     )}
                   </div>
                   <span className="text-ink-4 text-xs">
-                    {member ? `LINE 會員：${member.name}` : "訪客"}
+                    {member ? (
+                      <>
+                        LINE 會員：
+                        <Link
+                          href={`/admin/members/${member.id}`}
+                          className={btn.link}
+                        >
+                          {member.name}
+                        </Link>
+                      </>
+                    ) : (
+                      "訪客"
+                    )}
                   </span>
                 </div>
               </div>
@@ -324,6 +342,21 @@ async function AdminOrder({
                   <PhoneIcon className="size-4" />
                   {order.contactPhone}
                 </a>
+              )}
+              {member && note && (
+                <div className="grid gap-1 rounded-lg border border-[#f4e3b5] bg-[#fffbef] px-3 py-2.5 text-[13px]">
+                  <div className="text-warn-fg flex items-center gap-1.5 text-xs font-medium">
+                    <NoteIcon className="size-3.5" />
+                    <span className="flex-1">店家備註</span>
+                    <Link
+                      href={`/admin/members/${member.id}`}
+                      className={btn.link}
+                    >
+                      編輯
+                    </Link>
+                  </div>
+                  <p className="text-ink-2 whitespace-pre-line">{note}</p>
+                </div>
               )}
               {member && (
                 <Link

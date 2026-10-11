@@ -23,6 +23,7 @@ import type {
 } from "@/lib/validators/admin";
 import { groupFolder, idPhotoFolder, type ZipPhoto } from "@/lib/zip-names";
 import {
+  memberNotes,
   memberTags,
   orderGroups,
   orderItems,
@@ -332,6 +333,43 @@ export async function memberName(userId: string): Promise<string | null> {
   return row?.name ?? null;
 }
 
+/** Joins each member to their non-draft orders, for counts and last-order time. */
+const memberOrderJoin = and(
+  eq(orders.userId, user.id),
+  ne(orders.status, "draft"),
+);
+
+export async function getMember(userId: string) {
+  const [row] = await db
+    .select({
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      role: user.role,
+      createdAt: user.createdAt,
+      orderCount: count(orders.id),
+      lastOrderAt: max(orders.submittedAt),
+      note: memberNotes.note,
+      noteUpdatedAt: memberNotes.updatedAt,
+    })
+    .from(user)
+    .leftJoin(orders, memberOrderJoin)
+    .leftJoin(memberNotes, eq(memberNotes.userId, user.id))
+    .where(eq(user.id, userId))
+    .groupBy(user.id, memberNotes.userId);
+  if (!row) return null;
+  const tags = await tagsByUser([row.id]);
+  return { ...row, tags: tags.get(row.id) ?? [] };
+}
+
+export async function memberNote(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ note: memberNotes.note })
+    .from(memberNotes)
+    .where(eq(memberNotes.userId, userId));
+  return row?.note ?? null;
+}
+
 export async function listMembers(filter: MemberFilter) {
   const conds: (SQL | undefined)[] = [];
   if (filter.tag) {
@@ -361,14 +399,13 @@ export async function listMembers(filter: MemberFilter) {
         createdAt: user.createdAt,
         orderCount: count(orders.id),
         lastOrderAt: max(orders.submittedAt),
+        hasNote: sql<boolean>`${memberNotes.userId} is not null`,
       })
       .from(user)
-      .leftJoin(
-        orders,
-        and(eq(orders.userId, user.id), ne(orders.status, "draft")),
-      )
+      .leftJoin(orders, memberOrderJoin)
+      .leftJoin(memberNotes, eq(memberNotes.userId, user.id))
       .where(where)
-      .groupBy(user.id)
+      .groupBy(user.id, memberNotes.userId)
       .orderBy(desc(user.createdAt))
       .limit(PAGE_SIZE)
       .offset((filter.page - 1) * PAGE_SIZE),

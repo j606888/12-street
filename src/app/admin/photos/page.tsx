@@ -13,6 +13,7 @@ import {
 } from "@/components/admin/ui";
 import { PhoneIcon } from "@/components/icons";
 import { listStoredPhotos } from "@/lib/admin";
+import { bucketUsage, R2_FREE_BYTES } from "@/lib/r2";
 import { daysUntil, formatBytes, formatTaipeiTime } from "@/lib/format";
 import { requireAdmin } from "@/lib/session";
 import { firstParam, photoViewInput } from "@/lib/validators/admin";
@@ -34,10 +35,72 @@ export default function AdminPhotosPage({
         title="照片保存"
         description="照片上傳後保存 1 個月，到期由系統自動刪除。客人取件後也可以提早刪除。"
       />
+      <Suspense fallback={<UsageCard>正在計算 R2 用量…</UsageCard>}>
+        <BucketUsage />
+      </Suspense>
       <Suspense fallback={<p className="text-ink-4">載入中…</p>}>
         <StoredPhotos searchParams={searchParams} />
       </Suspense>
     </main>
+  );
+}
+
+function UsageCard({ children }: { children: React.ReactNode }) {
+  return (
+    <section
+      aria-label="R2 儲存空間"
+      className="border-admin-line grid gap-2.5 rounded-xl border bg-white px-[18px] py-4"
+    >
+      <span className="text-ink-3 text-[13px]">R2 儲存空間（整個 bucket）</span>
+      {children}
+    </section>
+  );
+}
+
+/** Whole-bucket usage straight from R2: drafts, transfer proofs and strays too. */
+async function BucketUsage() {
+  await requireAdmin();
+  let usage: Awaited<ReturnType<typeof bucketUsage>>;
+  try {
+    usage = await bucketUsage();
+  } catch (err) {
+    console.error("bucketUsage failed", err);
+    return (
+      <UsageCard>
+        <span className="text-danger-fg text-[13px]">
+          無法取得 R2 用量，請稍後再試
+        </span>
+      </UsageCard>
+    );
+  }
+  const ratio = usage.bytes / R2_FREE_BYTES;
+  const warn = ratio >= 0.8;
+  return (
+    <UsageCard>
+      <span className="text-[28px] leading-tight font-semibold tracking-tight tabular-nums">
+        {formatBytes(usage.bytes)}{" "}
+        <span className="text-ink-3 text-sm font-medium">
+          / {formatBytes(R2_FREE_BYTES)} 免費額度・{usage.objects} 個檔案
+        </span>
+      </span>
+      <div
+        role="meter"
+        aria-label="R2 免費額度使用率"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(ratio * 100)}
+        className="bg-admin-chip h-2 overflow-hidden rounded-full"
+      >
+        <div
+          className={`h-full rounded-full ${warn ? "bg-warn-fg" : "bg-ink"}`}
+          style={{ width: `${Math.min(100, ratio * 100)}%` }}
+        />
+      </div>
+      <span className={`text-xs ${warn ? "text-warn-fg" : "text-ink-4"}`}>
+        已用 {(ratio * 100).toFixed(1)}%
+        {warn && "，快超過免費額度了，可以先刪除已取件訂單的照片"}
+      </span>
+    </UsageCard>
   );
 }
 
@@ -71,7 +134,7 @@ async function StoredPhotos({
       unit: "張",
     },
     {
-      label: "佔用空間",
+      label: "訂單照片佔用",
       value: formatBytes(all.reduce((s, r) => s + r.bytes, 0)),
     },
   ];

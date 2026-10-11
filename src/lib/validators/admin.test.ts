@@ -5,6 +5,8 @@ import {
   memberFilterInput,
   orderFilterInput,
   photoViewInput,
+  updateMemberInput,
+  updateMemberNoteInput,
 } from "./admin";
 
 describe("orderFilterInput", () => {
@@ -62,6 +64,38 @@ describe("addMemberTagInput", () => {
     expect(parse("一".repeat(21)).success).toBe(false);
     expect(parse("a\nb").success).toBe(false);
     expect(parse("一".repeat(20)).success).toBe(true);
+  });
+});
+
+describe("updateMemberInput", () => {
+  const parse = (name: string, phone: string) =>
+    updateMemberInput.safeParse({ userId: "u1", name, phone });
+
+  it("normalizes the phone and trims the name", () => {
+    expect(parse(" 小明 ", "0912-345-678").data).toEqual({
+      userId: "u1",
+      name: "小明",
+      phone: "0912345678",
+    });
+  });
+
+  it("treats a blank phone as none", () => {
+    expect(parse("小明", "  ").data?.phone).toBeNull();
+  });
+
+  it("rejects a bad phone or an empty name", () => {
+    expect(parse("小明", "12345").success).toBe(false);
+    expect(parse("  ", "0912345678").success).toBe(false);
+  });
+});
+
+describe("updateMemberNoteInput", () => {
+  it("keeps line breaks and caps the length", () => {
+    const parse = (note: string) =>
+      updateMemberNoteInput.safeParse({ userId: "u1", note });
+    expect(parse(" 第一行\n第二行 ").data?.note).toBe("第一行\n第二行");
+    expect(parse("").data?.note).toBe("");
+    expect(parse("一".repeat(2001)).success).toBe(false);
   });
 });
 

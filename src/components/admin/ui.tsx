@@ -76,3 +76,33 @@ export const td = "px-2 py-3 align-top first:pl-5 last:pr-5";
 
 export const PILL =
   "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium";
+
+const AVATAR_TONES = [
+  "bg-ok-bg text-ok-fg",
+  "bg-info-bg text-info-fg",
+  "bg-warn-bg text-warn-fg",
+  "bg-[#f3e8fd] text-[#6a2ba8]",
+  "bg-danger-bg text-danger-fg",
+];
+
+/** First letter of the member's name; same member, same colour. */
+export function Avatar({
+  id,
+  name,
+  className = "size-8 text-[13px]",
+}: {
+  id: string;
+  name: string;
+  className?: string;
+}) {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0;
+  const tone = AVATAR_TONES[Math.abs(h) % AVATAR_TONES.length];
+  return (
+    <span
+      className={`grid shrink-0 place-items-center rounded-full font-semibold ${tone} ${className}`}
+    >
+      {name.slice(0, 1)}
+    </span>
+  );
+}

@@ -157,3 +157,10 @@ export const TrashIcon = (p: IconProps) => (
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
   </Icon>
 );
+
+export const NoteIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z" />
+    <path d="M15 3v6h6M7 13h10M7 17h6" />
+  </Icon>
+);

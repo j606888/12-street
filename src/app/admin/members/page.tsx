@@ -4,6 +4,7 @@ import Link from "next/link";
 import { MemberTags, TagOptions } from "@/components/admin/member-tags";
 import { Pagination } from "@/components/admin/pagination";
 import {
+  Avatar,
   btn,
   Card,
   EmptyState,
@@ -12,7 +13,7 @@ import {
   td,
   th,
 } from "@/components/admin/ui";
-import { SearchIcon } from "@/components/icons";
+import { NoteIcon, SearchIcon } from "@/components/icons";
 import { listMembers, listTags } from "@/lib/admin";
 import { formatTaipeiTime } from "@/lib/format";
 import {
@@ -23,21 +24,6 @@ import {
 import { requireAdmin } from "@/lib/session";
 
 export const metadata: Metadata = { title: "會員｜後台" };
-
-const AVATAR_TONES = [
-  "bg-ok-bg text-ok-fg",
-  "bg-info-bg text-info-fg",
-  "bg-warn-bg text-warn-fg",
-  "bg-[#f3e8fd] text-[#6a2ba8]",
-  "bg-danger-bg text-danger-fg",
-];
-
-/** Same member, same avatar colour. */
-function avatarTone(id: string) {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0;
-  return AVATAR_TONES[Math.abs(h) % AVATAR_TONES.length];
-}
 
 export default function AdminMembersPage({
   searchParams,
@@ -158,13 +144,24 @@ async function Members({
                   >
                     <td className={`${td} align-middle`}>
                       <div className="flex items-center gap-2.5">
-                        <span
-                          className={`grid size-8 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${avatarTone(m.id)}`}
-                        >
-                          {m.name.slice(0, 1)}
-                        </span>
+                        <Avatar id={m.id} name={m.name} />
                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                          <span className="mr-0.5 font-medium">{m.name}</span>
+                          <Link
+                            href={`/admin/members/${m.id}`}
+                            className="hover:text-accent mr-0.5 font-medium hover:underline"
+                          >
+                            {m.name}
+                          </Link>
+                          {m.hasNote && (
+                            <Link
+                              href={`/admin/members/${m.id}`}
+                              title="有備註"
+                              className="text-warn-fg"
+                            >
+                              <NoteIcon className="size-3.5" />
+                              <span className="sr-only">有備註</span>
+                            </Link>
+                          )}
                           {m.role === "admin" && (
                             <span className="border-admin-line text-ink-3 rounded border px-1.5 text-[11px]">
                               管理員
