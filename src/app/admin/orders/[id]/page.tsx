@@ -219,6 +219,7 @@ async function AdminOrder({
               </p>
             ) : (
               <PhotoTable
+                orderId={order.id}
                 photos={stored.map((p) => ({
                   id: p.id,
                   fileName: p.fileName,

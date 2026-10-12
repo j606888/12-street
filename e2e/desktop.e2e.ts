@@ -146,6 +146,16 @@ test("admin finds the order, updates statuses, downloads the ZIP and deletes pho
     await expect(lookupPage.getByLabel("訂單狀態：可取件")).toBeVisible();
     await expect(lookupPage.getByText("付款狀態：已付款")).toBeVisible();
 
+    // Preview: clicking a file name loads that original straight from R2
+    await page.getByRole("button", { name: /^預覽 / }).first().click();
+    const preview = page.getByRole("dialog").getByRole("img");
+    await expect(preview).toBeVisible();
+    await expect
+      .poll(() => preview.evaluate((img: HTMLImageElement) => img.naturalWidth))
+      .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "關閉" }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+
     // ZIP: stream through the stubbed save picker, then read the central directory
     await page.getByRole("button", { name: "下載照片 ZIP" }).click();
     await page.waitForFunction(

@@ -60,6 +60,7 @@ const orderId = z.uuid();
 const userId = z.string().min(1).max(64);
 
 export const orderIdInput = z.object({ orderId });
+export const orderPhotoInput = z.object({ orderId, photoId: z.uuid() });
 export const updateOrderStatusInput = z.object({
   orderId,
   status: z.enum(ADMIN_ORDER_STATUSES),

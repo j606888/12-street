@@ -13,6 +13,7 @@ import { getAdmin } from "@/lib/session";
 import {
   addMemberTagInput,
   orderIdInput,
+  orderPhotoInput,
   removeMemberTagInput,
   updateMemberInput,
   updateMemberNoteInput,
@@ -133,6 +134,29 @@ export async function getZipFiles(
     })),
   );
   return { ok: true, files };
+}
+
+/** A presigned GET for one uploaded photo, fetched on click so it never goes stale. */
+export async function getPhotoUrl(
+  input: unknown,
+): Promise<Result<{ url: string }>> {
+  if (!(await getAdmin())) return FORBIDDEN;
+  const { data, error } = parse(orderPhotoInput, input);
+  if (!data) return { ok: false, error };
+
+  const [photo] = await db
+    .select({ r2Key: photos.r2Key })
+    .from(photos)
+    .innerJoin(orders, eq(orders.id, photos.orderId))
+    .where(
+      and(
+        submitted(data.orderId),
+        eq(photos.id, data.photoId),
+        eq(photos.status, "uploaded"),
+      ),
+    );
+  if (!photo) return { ok: false, error: "找不到照片，可能已經刪除" };
+  return { ok: true, url: await presignGet(photo.r2Key) };
 }
 
 /** Removes the order's photos from R2 ahead of the monthly cleanup. */
