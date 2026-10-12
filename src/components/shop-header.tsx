@@ -19,10 +19,10 @@ export function ShopHeader({
         }`}
       >
         <Link href="/" className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="bg-brand grid size-11 shrink-0 place-items-center rounded-xl text-white">
-            <CameraIcon className="size-6" />
+          <span className="bg-brand grid size-10 shrink-0 place-items-center rounded-xl text-white">
+            <CameraIcon className="size-5.5" />
           </span>
-          <span className="truncate text-[19px] leading-tight font-bold">
+          <span className="truncate text-[17px] leading-tight font-bold">
             {SHOP.name}
           </span>
         </Link>

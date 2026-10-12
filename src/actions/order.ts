@@ -128,7 +128,6 @@ export async function createGroup(
     .values({
       orderId,
       printSizeId: data.printSizeId,
-      laminate: data.laminate,
       sortOrder: n,
     })
     .returning({ id: orderGroups.id });
@@ -140,16 +139,11 @@ export async function updateGroup(input: unknown): Promise<Result> {
   if (!data) return { ok: false, error };
   const group = await ownedGroup(data.groupId);
   if (!group) return NO_DRAFT;
-  if (
-    data.printSizeId !== undefined &&
-    !(await activeSizeExists(data.printSizeId))
-  )
+  if (!(await activeSizeExists(data.printSizeId)))
     return { ok: false, error: "沒有這個尺寸" };
-  if (data.printSizeId === undefined && data.laminate === undefined)
-    return { ok: true };
   await db
     .update(orderGroups)
-    .set({ printSizeId: data.printSizeId, laminate: data.laminate })
+    .set({ printSizeId: data.printSizeId })
     .where(eq(orderGroups.id, group.id));
   return { ok: true };
 }
@@ -296,6 +290,11 @@ export async function savePhotoOptions(input: unknown): Promise<Result> {
         eq(photos.orderId, draftId),
       );
       await tx.update(photos).set({ quantity: item.quantity }).where(owned);
+      // Only prints can be laminated
+      await tx
+        .update(photos)
+        .set({ laminateQuantity: item.laminateQuantity })
+        .where(and(owned, eq(photos.kind, "print")));
       if (item.productId && validSets.has(item.productId)) {
         await tx
           .update(photos)
@@ -367,6 +366,7 @@ export async function submitOrder(input: unknown): Promise<Result> {
           kind: photos.kind,
           status: photos.status,
           quantity: photos.quantity,
+          laminateQuantity: photos.laminateQuantity,
           productId: photos.productId,
         })
         .from(photos)
@@ -377,19 +377,25 @@ export async function submitOrder(input: unknown): Promise<Result> {
           `還有 ${pending} 張照片沒有上傳完成，請重傳或移除`,
         );
 
-      // Apply the quantities (and ID-photo sets) shown at checkout
+      // Apply the quantities, lamination and ID-photo sets shown at checkout
       const options = new Map(data.photoOptions.map((o) => [o.photoId, o]));
       for (const p of photoRows) {
         const o = options.get(p.id);
         if (!o || p.kind === "custom") continue;
         const productId =
           p.kind === "id_photo" && o.productId ? o.productId : p.productId;
-        if (o.quantity !== p.quantity || productId !== p.productId) {
+        const laminateQuantity = p.kind === "print" ? o.laminateQuantity : 0;
+        if (
+          o.quantity !== p.quantity ||
+          laminateQuantity !== p.laminateQuantity ||
+          productId !== p.productId
+        ) {
           await tx
             .update(photos)
-            .set({ quantity: o.quantity, productId })
+            .set({ quantity: o.quantity, laminateQuantity, productId })
             .where(eq(photos.id, p.id));
           p.quantity = o.quantity;
+          p.laminateQuantity = laminateQuantity;
           p.productId = productId;
         }
       }
@@ -399,7 +405,6 @@ export async function submitOrder(input: unknown): Promise<Result> {
         .select({
           id: orderGroups.id,
           price: printSizes.price,
-          laminate: orderGroups.laminate,
           laminationPrice: printSizes.laminationPrice,
         })
         .from(orderGroups)
@@ -407,19 +412,21 @@ export async function submitOrder(input: unknown): Promise<Result> {
         .where(eq(orderGroups.orderId, orderId));
       const pricedGroups = [];
       for (const g of groups) {
-        const quantities = photoRows
-          .filter(
-            (p) =>
-              p.kind === "print" &&
-              p.groupId === g.id &&
-              p.status === "uploaded",
-          )
-          .map((p) => p.quantity);
+        const prints = photoRows.filter(
+          (p) =>
+            p.kind === "print" && p.groupId === g.id && p.status === "uploaded",
+        );
+        const quantities = prints.map((p) => p.quantity);
         if (!quantities.length) {
           await tx.delete(orderGroups).where(eq(orderGroups.id, g.id));
           continue;
         }
-        const laminationUnitPrice = g.laminate ? g.laminationPrice : null;
+        // A draft saved before the quantity dropped may still hold a higher count
+        const laminatedPrints = prints.reduce(
+          (n, p) => n + Math.min(p.laminateQuantity, p.quantity),
+          0,
+        );
+        const laminationUnitPrice = laminatedPrints ? g.laminationPrice : null;
         await tx
           .update(orderGroups)
           .set({ unitPrice: g.price, laminationUnitPrice })
@@ -427,6 +434,7 @@ export async function submitOrder(input: unknown): Promise<Result> {
         pricedGroups.push({
           unitPrice: g.price,
           laminationUnitPrice,
+          laminatedPrints,
           quantities,
         });
       }

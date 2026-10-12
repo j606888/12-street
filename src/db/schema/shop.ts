@@ -122,8 +122,8 @@ export const orderGroups = pgTable(
       .notNull()
       .references(() => printSizes.id),
     unitPrice: integer("unit_price"), // snapshot taken on submit
-    laminate: boolean("laminate").notNull().default(false), // 護貝 every print in the group
-    laminationUnitPrice: integer("lamination_unit_price"), // snapshot taken on submit
+    // 護貝 price snapshot taken on submit; null when no print in the group is laminated
+    laminationUnitPrice: integer("lamination_unit_price"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -157,6 +157,8 @@ export const photos = pgTable(
     sha256: text("sha256").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     quantity: integer("quantity").notNull().default(1),
+    // How many of `quantity` get laminated (護貝); prints only, never above quantity
+    laminateQuantity: integer("laminate_quantity").notNull().default(0),
     status: photoStatus("status").notNull().default("pending"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

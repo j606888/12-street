@@ -98,8 +98,8 @@ async function orderSummaries(orderIds: string[]) {
       .select({
         orderId: orderGroups.orderId,
         label: printSizes.label,
-        laminate: orderGroups.laminate,
         prints: sum(photos.quantity).mapWith(Number),
+        laminated: sum(photos.laminateQuantity).mapWith(Number),
       })
       .from(orderGroups)
       .innerJoin(printSizes, eq(printSizes.id, orderGroups.printSizeId))
@@ -125,7 +125,10 @@ async function orderSummaries(orderIds: string[]) {
   const add = (id: string, part: string) =>
     map.set(id, [...(map.get(id) ?? []), part]);
   for (const g of groups) {
-    add(g.orderId, `${g.label} ×${g.prints ?? 0}${g.laminate ? "・護貝" : ""}`);
+    add(
+      g.orderId,
+      `${g.label} ×${g.prints ?? 0}${g.laminated ? `・護貝 ${g.laminated}` : ""}`,
+    );
   }
   for (const i of items) {
     add(i.orderId, `${i.name} ×${i.quantity}${i.isIdPhoto ? " 組" : ""}`);
@@ -269,7 +272,6 @@ export async function loadOrderPhotos(orderId: string): Promise<AdminPhoto[]> {
       .select({
         id: orderGroups.id,
         label: printSizes.label,
-        laminate: orderGroups.laminate,
       })
       .from(orderGroups)
       .innerJoin(printSizes, eq(printSizes.id, orderGroups.printSizeId))
@@ -284,6 +286,7 @@ export async function loadOrderPhotos(orderId: string): Promise<AdminPhoto[]> {
         fileName: photos.fileName,
         sizeBytes: photos.sizeBytes,
         quantity: photos.quantity,
+        laminateQuantity: photos.laminateQuantity,
         status: photos.status,
         expiresAt: photos.expiresAt,
         productName: products.name,
@@ -309,8 +312,12 @@ export async function loadOrderPhotos(orderId: string): Promise<AdminPhoto[]> {
       rows
         .filter((p) => p.kind === "print" && p.groupId === g.id)
         .map((p) => ({
-          ...view(p, groupFolder(i, g.label, g.laminate)),
-          quantity: { n: p.quantity, unit: "張" as const },
+          ...view(p, groupFolder(i, g.label)),
+          quantity: {
+            n: p.quantity,
+            unit: "張" as const,
+            laminated: p.laminateQuantity,
+          },
         })),
     ),
     ...rows

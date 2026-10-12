@@ -21,7 +21,7 @@ export default function OrderPage() {
           <MemberChip />
         </Suspense>
       </ShopHeader>
-      <main className="mx-auto w-full max-w-3xl px-4 pt-5 pb-36">
+      <main className="mx-auto w-full max-w-3xl px-4 pt-5 pb-40">
         <Suspense fallback={<p className="text-muted">載入中…</p>}>
           <OrderLoader />
         </Suspense>
@@ -36,7 +36,7 @@ async function MemberChip() {
     return (
       <Link
         href="/orders/mine"
-        className="border-line bg-card flex h-12 max-w-36 shrink-0 items-center rounded-full border px-4 text-[17px] font-bold"
+        className="border-line bg-card flex h-11 max-w-36 shrink-0 items-center rounded-full border px-4 text-[15px] font-bold"
       >
         <span className="truncate">{owner.name}</span>
       </Link>
@@ -45,7 +45,7 @@ async function MemberChip() {
   return (
     <Link
       href="/login?next=/order"
-      className="bg-line-green flex h-12 shrink-0 items-center rounded-full px-4 text-[17px] font-bold text-white"
+      className="bg-line-green flex h-11 shrink-0 items-center rounded-full px-4 text-[15px] font-bold text-white"
     >
       LINE 登入
     </Link>

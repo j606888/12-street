@@ -7,9 +7,9 @@ import {
 } from "./zip-names";
 
 describe("groupFolder", () => {
-  it("numbers groups and marks lamination", () => {
-    expect(groupFolder(0, "4×6", false)).toBe("01_4×6");
-    expect(groupFolder(11, "5×7", true)).toBe("12_5×7_護貝");
+  it("numbers groups", () => {
+    expect(groupFolder(0, "4×6")).toBe("01_4×6");
+    expect(groupFolder(11, "5×7")).toBe("12_5×7");
   });
 });
 
@@ -31,6 +31,23 @@ describe("safeSegment", () => {
 });
 
 describe("zipEntryNames", () => {
+  it("adds how many prints get laminated", () => {
+    expect(
+      zipEntryNames([
+        {
+          folder: "01_3×5",
+          fileName: "a.jpg",
+          quantity: { n: 5, unit: "張", laminated: 3 },
+        },
+        {
+          folder: "01_3×5",
+          fileName: "b.jpg",
+          quantity: { n: 2, unit: "張", laminated: 0 },
+        },
+      ]),
+    ).toEqual(["01_3×5/a_5張_護貝3張.jpg", "01_3×5/b_2張.jpg"]);
+  });
+
   it("adds the quantity and unit to the file name", () => {
     expect(
       zipEntryNames([

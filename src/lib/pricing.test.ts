@@ -38,9 +38,15 @@ describe("groupCharges", () => {
   it("adds lamination with its own minimum", () => {
     // one 4×6 laminated: printing 6→10, lamination 5→10
     expect(
-      groupCharges({ unitPrice: 6, laminationUnitPrice: 5, quantities: [1] }),
+      groupCharges({
+        unitPrice: 6,
+        laminationUnitPrice: 5,
+        laminatedPrints: 1,
+        quantities: [1],
+      }),
     ).toEqual({
       prints: 1,
+      laminatedPrints: 1,
       printing: 10,
       lamination: 10,
       total: 20,
@@ -50,9 +56,42 @@ describe("groupCharges", () => {
       groupSubtotal({
         unitPrice: 25,
         laminationUnitPrice: 10,
+        laminatedPrints: 3,
         quantities: [1, 2],
       }),
     ).toBe(105);
+  });
+
+  it("charges lamination only for the laminated prints", () => {
+    // 5 × 3×5, 3 of them laminated: 25 + 15
+    expect(
+      groupCharges({
+        unitPrice: 5,
+        laminationUnitPrice: 5,
+        laminatedPrints: 3,
+        quantities: [5],
+      }),
+    ).toMatchObject({ printing: 25, lamination: 15, total: 40 });
+    // Priced but nothing laminated
+    expect(
+      groupSubtotal({
+        unitPrice: 5,
+        laminationUnitPrice: 5,
+        laminatedPrints: 0,
+        quantities: [5],
+      }),
+    ).toBe(25);
+  });
+
+  it("rejects more laminated prints than prints", () => {
+    expect(() =>
+      groupSubtotal({
+        unitPrice: 5,
+        laminationUnitPrice: 5,
+        laminatedPrints: 6,
+        quantities: [5],
+      }),
+    ).toThrow(RangeError);
   });
 
   it("ignores lamination when not selected", () => {
@@ -76,7 +115,12 @@ describe("groupCharges", () => {
       RangeError,
     );
     expect(() =>
-      groupSubtotal({ unitPrice: 8, laminationUnitPrice: -5, quantities: [1] }),
+      groupSubtotal({
+        unitPrice: 8,
+        laminationUnitPrice: -5,
+        laminatedPrints: 1,
+        quantities: [1],
+      }),
     ).toThrow(RangeError);
   });
 });
@@ -93,7 +137,13 @@ describe("calculateTotal", () => {
     const total = calculateTotal({
       groups: [
         { unitPrice: 6, quantities: Array(20).fill(1) }, // 4×6 × 20 = 120
-        { unitPrice: 35, laminationUnitPrice: 15, quantities: [2, 3] }, // 6×8 × 5 = 175 + 75
+        // 6×8 × 5 = 175 + 75
+        {
+          unitPrice: 35,
+          laminationUnitPrice: 15,
+          laminatedPrints: 5,
+          quantities: [2, 3],
+        },
         { unitPrice: 5, quantities: [1] }, // single 2×3 → 10
       ],
       items: [{ unitPrice: 100, quantity: 2 }], // 2 ID-photo sets

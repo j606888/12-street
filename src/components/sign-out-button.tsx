@@ -24,7 +24,7 @@ export function SignOutButton({ className }: { className?: string }) {
       type="button"
       onClick={signOut}
       disabled={pending}
-      className={className ?? "py-2.5 text-sm text-neutral-500 underline"}
+      className={className ?? "text-muted py-2.5 text-base underline"}
     >
       {pending ? "登出中…" : "登出"}
     </button>

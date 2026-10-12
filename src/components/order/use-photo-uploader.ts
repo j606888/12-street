@@ -43,6 +43,7 @@ export type Entry = {
   size: number;
   sha256?: string;
   quantity: number;
+  laminateQuantity: number; // prints of `quantity` to laminate (print groups only)
   status: EntryStatus;
   progress: number;
   error?: string;
@@ -55,10 +56,13 @@ export type Group = {
   key: string;
   serverId?: string;
   printSizeId: number;
-  laminate: boolean;
 };
 
-type PhotoOption = { quantity: number; productId?: number };
+type PhotoOption = {
+  quantity: number;
+  laminateQuantity: number;
+  productId?: number;
+};
 
 export type Notice = { bucket: string; message: string };
 
@@ -80,6 +84,7 @@ function entriesFromDraft(draft: DraftView | null): {
       size: p.sizeBytes,
       sha256: p.sha256,
       quantity: p.quantity,
+      laminateQuantity: Math.min(p.laminateQuantity, p.quantity),
       status: p.status === "uploaded" ? "uploaded" : "missing",
       progress: p.status === "uploaded" ? 1 : 0,
       previewUrl: p.thumbUrl ?? undefined,
@@ -89,7 +94,6 @@ function entriesFromDraft(draft: DraftView | null): {
     key: g.id,
     serverId: g.id,
     printSizeId: g.printSizeId,
-    laminate: g.laminate,
   }));
   const entries = [
     ...draft.groups.flatMap((g) => g.photos.map(toEntry(g.id))),
@@ -107,11 +111,7 @@ export function usePhotoUploader(
   const [initial] = useState(() => {
     const restored = entriesFromDraft(draft);
     if (!restored.groups.length)
-      restored.groups.push({
-        key: newLocalId(),
-        printSizeId: defaultSizeId,
-        laminate: false,
-      });
+      restored.groups.push({ key: newLocalId(), printSizeId: defaultSizeId });
     return restored;
   });
   const [groups, setGroups] = useState<Group[]>(initial.groups);
@@ -250,10 +250,7 @@ export function usePhotoUploader(
     if (group?.serverId) return Promise.resolve(group.serverId);
     let p = groupIdPromises.current.get(key);
     if (!p) {
-      p = createGroup({
-        printSizeId: group?.printSizeId,
-        laminate: group?.laminate,
-      }).then((res) => {
+      p = createGroup({ printSizeId: group?.printSizeId }).then((res) => {
         if (!res.ok) {
           groupIdPromises.current.delete(key);
           throw new Error(res.error);
@@ -271,15 +268,12 @@ export function usePhotoUploader(
   /** Adds an empty group and returns its key. */
   const addGroup = useCallback((printSizeId: number) => {
     const key = newLocalId();
-    setGroups((gs) => [...gs, { key, printSizeId, laminate: false }]);
+    setGroups((gs) => [...gs, { key, printSizeId }]);
     return key;
   }, []);
 
   const updateGroupOptions = useCallback(
-    async (
-      key: string,
-      change: Partial<Pick<Group, "printSizeId" | "laminate">>,
-    ) => {
+    async (key: string, change: Pick<Group, "printSizeId">) => {
       setGroups((gs) =>
         gs.map((g) => (g.key === key ? { ...g, ...change } : g)),
       );
@@ -349,9 +343,14 @@ export function usePhotoUploader(
           // Changed before the row existed: save it now
           const changedSet =
             bucket === ID_PHOTO_BUCKET && current.productId !== registeredSetId;
-          if (current.quantity !== 1 || changedSet) {
+          if (
+            current.quantity !== 1 ||
+            current.laminateQuantity !== 0 ||
+            changedSet
+          ) {
             markDirty(u.photoId, {
               quantity: current.quantity,
+              laminateQuantity: current.laminateQuantity,
               productId: current.productId,
             });
           }
@@ -382,6 +381,7 @@ export function usePhotoUploader(
           fileName: file.name,
           size: file.size,
           quantity: 1,
+          laminateQuantity: 0,
           status: "hashing",
           progress: 0,
           productId:
@@ -493,19 +493,28 @@ export function usePhotoUploader(
     if (e.photoId) await deletePhoto({ photoId: e.photoId });
   }, []);
 
-  // ---- Quantities / ID-photo sets: saved to the draft in the background (debounced) ----
+  // ---- Quantities / lamination / ID-photo sets: saved to the draft in the background (debounced) ----
   const changeEntries = useCallback(
     (localIds: string[], change: Partial<PhotoOption>) => {
       const ids = new Set(localIds);
+      // Lamination never exceeds the photo's own print count
+      const apply = (e: Entry): PhotoOption => {
+        const quantity = change.quantity ?? e.quantity;
+        return {
+          quantity,
+          laminateQuantity: Math.max(
+            0,
+            Math.min(change.laminateQuantity ?? e.laminateQuantity, quantity),
+          ),
+          productId: change.productId ?? e.productId,
+        };
+      };
       setEntries((list) =>
-        list.map((e) => (ids.has(e.localId) ? { ...e, ...change } : e)),
+        list.map((e) => (ids.has(e.localId) ? { ...e, ...apply(e) } : e)),
       );
       for (const e of entriesRef.current) {
         if (!ids.has(e.localId) || !e.photoId) continue;
-        markDirty(e.photoId, {
-          quantity: change.quantity ?? e.quantity,
-          productId: change.productId ?? e.productId,
-        });
+        markDirty(e.photoId, apply(e));
       }
     },
     [markDirty],
@@ -514,6 +523,11 @@ export function usePhotoUploader(
   const setQuantity = useCallback(
     (localIds: string[], quantity: number) =>
       changeEntries(localIds, { quantity }),
+    [changeEntries],
+  );
+  const setLaminateQuantity = useCallback(
+    (localIds: string[], laminateQuantity: number) =>
+      changeEntries(localIds, { laminateQuantity }),
     [changeEntries],
   );
   const setIdPhotoSet = useCallback(
@@ -537,6 +551,7 @@ export function usePhotoUploader(
     retry,
     remove,
     setQuantity,
+    setLaminateQuantity,
     setIdPhotoSet,
     dismissNotices,
   };

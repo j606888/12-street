@@ -7,8 +7,8 @@ export default function LoginPage({ searchParams }: PageProps<"/login">) {
     <>
       <ShopHeader />
       <main className="mx-auto grid w-full max-w-md gap-5 px-5 py-10">
-        <h1 className="text-[32px] leading-tight font-black">用 LINE 登入</h1>
-        <p className="text-xl text-[#4a423c]">登入後可以查以前的訂單。</p>
+        <h1 className="text-[28px] leading-tight font-bold">用 LINE 登入</h1>
+        <p className="text-muted text-[17px]">登入後可以查以前的訂單。</p>
         <Suspense>
           <Buttons searchParams={searchParams} />
         </Suspense>

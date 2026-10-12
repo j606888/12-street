@@ -99,6 +99,7 @@ export type DraftPhoto = {
   sha256: string;
   sizeBytes: number;
   quantity: number;
+  laminateQuantity: number;
   status: "pending" | "uploaded";
   thumbUrl: string | null;
   productId: number | null; // ID-photo set
@@ -108,7 +109,6 @@ export type DraftView = {
   groups: {
     id: string;
     printSizeId: number;
-    laminate: boolean;
     photos: DraftPhoto[];
   }[];
   customPhotos: DraftPhoto[];
@@ -121,7 +121,6 @@ export async function loadDraft(orderId: string): Promise<DraftView> {
       .select({
         id: orderGroups.id,
         printSizeId: orderGroups.printSizeId,
-        laminate: orderGroups.laminate,
       })
       .from(orderGroups)
       .where(eq(orderGroups.orderId, orderId))
@@ -143,6 +142,7 @@ export async function loadDraft(orderId: string): Promise<DraftView> {
         sha256: p.sha256,
         sizeBytes: p.sizeBytes,
         quantity: p.quantity,
+        laminateQuantity: p.laminateQuantity,
         status: p.status as "pending" | "uploaded",
         thumbUrl: p.status === "uploaded" ? await presignGet(p.r2Key) : null,
         productId: p.productId,

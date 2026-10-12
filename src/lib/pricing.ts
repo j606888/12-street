@@ -6,8 +6,10 @@ export const MIN_GROUP_CHARGE = 10;
 export type PricedGroup = {
   unitPrice: number;
   quantities: number[];
-  /** Per-print lamination (護貝) price; null/undefined when not laminated. */
+  /** Per-print lamination (護貝) price; null/undefined when nothing is laminated. */
   laminationUnitPrice?: number | null;
+  /** How many of the group's prints are laminated. */
+  laminatedPrints?: number;
 };
 export type PricedItem = { unitPrice: number; quantity: number };
 
@@ -31,11 +33,21 @@ export function groupCharges(group: PricedGroup) {
     prints += q;
   }
   const printing = minimumCharge(group.unitPrice, prints);
+  const laminatedPrints = group.laminatedPrints ?? 0;
+  assertAmount(laminatedPrints, "laminatedPrints");
+  if (laminatedPrints > prints)
+    throw new RangeError("laminatedPrints must not exceed prints");
   const lamination =
     group.laminationUnitPrice == null
       ? 0
-      : minimumCharge(group.laminationUnitPrice, prints);
-  return { prints, printing, lamination, total: printing + lamination };
+      : minimumCharge(group.laminationUnitPrice, laminatedPrints);
+  return {
+    prints,
+    laminatedPrints,
+    printing,
+    lamination,
+    total: printing + lamination,
+  };
 }
 
 export function groupSubtotal(group: PricedGroup): number {

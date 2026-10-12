@@ -38,28 +38,30 @@ async function OrderSummary({
   return (
     <>
       <div className="grid justify-items-center gap-3 text-center">
-        <span className="bg-line-green grid size-21 place-items-center rounded-full text-white">
-          <CheckIcon className="size-12" />
+        <span className="bg-line-green grid size-16 place-items-center rounded-full text-white">
+          <CheckIcon className="size-9" />
         </span>
-        <h1 className="text-4xl leading-tight font-black">訂單送出了</h1>
-        <p className="text-[22px] text-[#4a423c]">洗好後，請到店裡拿照片。</p>
+        <h1 className="text-[28px] leading-tight font-bold">訂單送出了</h1>
+        <p className="text-muted text-lg">洗好後，請到店裡拿照片。</p>
       </div>
 
-      <div className="border-line bg-card overflow-hidden rounded-[20px] border">
+      <div className="border-line bg-card overflow-hidden rounded-2xl border">
         <div className="bg-brand-tint flex flex-wrap items-center justify-between gap-x-3 px-5 py-4">
-          <span className="text-brand-dark text-xl font-bold">訂單編號</span>
-          <p className="font-mono text-[28px] font-bold tracking-wide">
+          <span className="text-brand-dark text-[17px] font-bold">
+            訂單編號
+          </span>
+          <p className="font-mono text-2xl font-bold tracking-wide">
             {order.orderNo}
           </p>
         </div>
         {order.submittedAt && (
-          <p className="text-muted border-t border-[#eeebe6] px-5 py-3 text-lg">
+          <p className="text-muted border-line border-t px-5 py-3 text-base">
             {formatTaipeiTime(order.submittedAt)}
           </p>
         )}
       </div>
 
-      <div className="bg-subtle grid gap-1 rounded-[20px] px-5 py-4 text-xl">
+      <div className="bg-subtle grid gap-1 rounded-2xl px-5 py-4 text-[17px]">
         <p className="font-bold">{SHOP.name}</p>
         <p>{SHOP.address}</p>
         {SHOP.hours.map((line) => (
@@ -72,18 +74,18 @@ async function OrderSummary({
       <nav className="grid gap-3 sm:grid-cols-2">
         <Link
           href="/orders/lookup"
-          className="bg-brand flex min-h-17 items-center justify-center rounded-[18px] text-2xl font-bold text-white"
+          className="bg-brand hover:bg-brand-dark flex h-13.5 items-center justify-center rounded-[14px] text-lg font-bold text-white"
         >
           查訂單
         </Link>
         <Link
           href="/"
-          className="bg-card flex min-h-17 items-center justify-center rounded-[18px] border-2 border-[#c9c2bb] text-[22px] font-bold"
+          className="bg-card border-field flex h-13.5 items-center justify-center rounded-[14px] border-2 text-[17px] font-bold"
         >
           回首頁
         </Link>
       </nav>
-      <p className="text-muted text-center text-base">
+      <p className="text-muted text-center text-[15px]">
         照片保留 1 個月後自動刪除
       </p>
     </>
