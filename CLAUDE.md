@@ -29,6 +29,17 @@ pnpm db:seed             # 尺寸、價格、周邊商品、管理員
 - `src/lib/` server 端共用（`auth.ts`、`r2.ts`、`db.ts`、`validators/`）
 - `src/components/` UI 元件；`src/actions/` Server Actions
 
+## 前台設計慣例
+設計稿：https://claude.ai/artifact/VC6Bfeoxvj5JXsP2tHpVLZ （最下排「通用版」）。後台有自己的色票（`--color-admin-*`）和字體，不受這一節影響。
+- 色票一律用 `globals.css` 的 token，不寫死 hex：底 `background` #f3f5f6、字 `foreground` #2b3440、次要字 `muted` #5a6672、線 `line` #dde2e6、淡底 `subtle` #e6ebef、主色 `brand` #4f6e89、主色深 `brand-dark` #3d586f（連結、主色文字）、主色淡底 `brand-tint` #e9eff3／`brand-soft` #dfe7ed、控制項外框 `field` #b9c4cd
+- 字體：DM Sans + Noto Sans TC；粗體最多用到 `font-bold`（700）
+- 字級：頁標題 28、區塊標題 20、內文與按鈕 17–18、次要說明 15–16、標籤最小 13；金額 26 粗體＋`tabular-nums`
+- 卡片：白底、1px `line`、圓角 16（`rounded-2xl`）；選中狀態用 `brand` 外框＋`brand-tint` 底
+- 按鈕：高 54（`h-13.5`）、圓角 14；主按鈕實心 `brand`，次按鈕白底＋2px `brand` 外框；輸入框同高、2px `field` 外框
+- 點擊範圍至少 44px；＋／－ 用 `icons.tsx` 的 SVG 圖示，不用文字符號（會對不齊）
+- 每個畫面只有一個實心主按鈕。選照片的畫面主按鈕是「加照片」，固定在底部列；「選好了，下一步」用外框樣式
+- 照片清單手機兩欄（`sm` 三欄、`md` 四欄）；每張各有「張數」和「護貝」兩列加減，護貝張數不超過該張張數
+
 ## 規範
 - 預設用 Server Component，有互動才加 `"use client"`
 - 有開 `cacheComponents`：讀 session／`cookies()`／`headers()`／`searchParams`／DB 的元件要包在 `<Suspense>` 裡，不要在 layout 最外層 await。後台每一頁都要在自己的 Suspense 裡呼叫 `requireAdmin()`（layout 不做檢查）

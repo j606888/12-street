@@ -17,17 +17,17 @@ export const metadata: Metadata = { title: "我的訂單｜線上洗照片" };
 export default function MyOrdersPage() {
   return (
     <main className="mx-auto grid w-full max-w-2xl gap-6 px-4 py-10">
-      <h1 className="text-2xl font-bold">我的訂單</h1>
-      <Suspense fallback={<p className="text-neutral-400">載入中…</p>}>
+      <h1 className="text-[28px] leading-tight font-bold">我的訂單</h1>
+      <Suspense fallback={<p className="text-muted">載入中…</p>}>
         <OrderList />
       </Suspense>
       <Link
         href="/"
-        className="py-2.5 text-center text-sm text-sky-700 underline"
+        className="text-brand-dark py-2.5 text-center text-base underline"
       >
         回首頁
       </Link>
-      <SignOutButton className="py-2.5 text-center text-sm text-neutral-500 underline" />
+      <SignOutButton className="text-muted py-2.5 text-center text-base underline" />
     </main>
   );
 }
@@ -38,9 +38,9 @@ async function OrderList() {
 
   if (!rows.length) {
     return (
-      <div className="grid gap-3 rounded-xl bg-neutral-50 p-6 text-center">
-        <p className="text-neutral-600">還沒有訂單。</p>
-        <Link href="/order" className="text-sky-700 underline">
+      <div className="bg-subtle grid gap-3 rounded-2xl p-6 text-center">
+        <p className="text-muted">還沒有訂單。</p>
+        <Link href="/order" className="text-brand-dark underline">
           開始下單
         </Link>
       </div>
@@ -53,15 +53,15 @@ async function OrderList() {
         <li key={o.id}>
           <Link
             href={`/orders/${o.id}`}
-            className="grid gap-2 rounded-xl border p-4 hover:bg-neutral-50"
+            className="border-line bg-card hover:bg-brand-tint grid gap-2 rounded-2xl border p-4"
           >
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-mono font-bold">{o.orderNo}</span>
               <span className="font-bold">{formatNtd(o.totalAmount)}</span>
             </div>
-            <div className="flex flex-wrap items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2 text-base">
               {o.submittedAt && (
-                <span className="text-neutral-500">
+                <span className="text-muted">
                   {formatTaipeiTime(o.submittedAt)}
                 </span>
               )}

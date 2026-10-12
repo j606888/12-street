@@ -16,7 +16,7 @@ export function OrderDetail({ order }: { order: OrderRow }) {
   return (
     <>
       <StatusSteps status={order.status} />
-      <section className="flex flex-wrap gap-2 text-sm">
+      <section className="flex flex-wrap gap-2 text-base">
         <span
           className={`rounded-full px-3 py-1 font-medium ${paymentStatusTone(order.paymentStatus)}`}
         >
@@ -25,12 +25,12 @@ export function OrderDetail({ order }: { order: OrderRow }) {
       </section>
 
       <section className="grid gap-2 rounded-2xl border border-line bg-card p-4">
-        <h2 className="text-[15px] font-bold">訂單明細</h2>
+        <h2 className="text-[17px] font-bold">訂單明細</h2>
         <OrderLines order={order} />
       </section>
 
-      <section className="grid gap-2 rounded-2xl border border-line bg-card p-4 text-sm">
-        <h2 className="text-[15px] font-bold">聯絡資料</h2>
+      <section className="grid gap-2 rounded-2xl border border-line bg-card p-4 text-base">
+        <h2 className="text-[17px] font-bold">聯絡資料</h2>
         <p>
           {order.contactName}・{order.contactPhone}
         </p>
@@ -45,8 +45,8 @@ export function OrderDetail({ order }: { order: OrderRow }) {
       </section>
 
       {order.paymentMethod && (
-        <section className="grid gap-2 rounded-2xl border-2 border-brand bg-card p-4 text-sm">
-          <h2 className="text-[15px] font-bold">
+        <section className="grid gap-2 rounded-2xl border-2 border-brand bg-card p-4 text-base">
+          <h2 className="text-[17px] font-bold">
             付款方式：{PAYMENT_LABEL[order.paymentMethod]}
           </h2>
           <div className="rounded-xl bg-subtle p-4">
@@ -81,13 +81,14 @@ export async function OrderLines({ order }: { order: OrderRow }) {
   const { groups, items, customPhotoCount } = await loadOrderLines(order.id);
 
   return (
-    <table className="w-full text-sm">
+    <table className="w-full text-base">
       <tbody>
         {groups.map((g) => {
           const unitPrice = g.unitPrice ?? 0;
           const c = groupCharges({
             unitPrice,
             laminationUnitPrice: g.laminationUnitPrice,
+            laminatedPrints: g.laminatedPrints,
             quantities: [g.prints],
           });
           return (
@@ -104,8 +105,8 @@ export async function OrderLines({ order }: { order: OrderRow }) {
                 <tr className="border-b border-line">
                   <td className="py-2 pl-4">護貝</td>
                   <td className="py-2 text-muted">
-                    {g.prints} 張 × {fmt(g.laminationUnitPrice)}
-                    {c.lamination > g.laminationUnitPrice * g.prints &&
+                    {g.laminatedPrints} 張 × {fmt(g.laminationUnitPrice)}
+                    {c.lamination > g.laminationUnitPrice * g.laminatedPrints &&
                       "（未滿低消）"}
                   </td>
                   <td className="py-2 text-right">{fmt(c.lamination)}</td>
@@ -141,7 +142,7 @@ export async function OrderLines({ order }: { order: OrderRow }) {
           <td className="pt-3" colSpan={2}>
             總計
           </td>
-          <td className="pt-3 text-right text-lg">{fmt(order.totalAmount)}</td>
+          <td className="pt-3 text-right text-xl">{fmt(order.totalAmount)}</td>
         </tr>
       </tfoot>
     </table>
@@ -156,7 +157,7 @@ function StatusSteps({ status }: { status: OrderStatus }) {
   if (current < 0) {
     return (
       <p
-        className={`w-fit rounded-full px-3 py-1 text-sm font-medium ${orderStatusTone(status)}`}
+        className={`w-fit rounded-full px-3 py-1 text-base font-medium ${orderStatusTone(status)}`}
       >
         訂單狀態：{ORDER_STATUS_LABEL[status]}
       </p>
@@ -171,14 +172,14 @@ function StatusSteps({ status }: { status: OrderStatus }) {
         {STEPS.map((s, i) => (
           <li key={s} className="grid justify-items-center gap-1.5">
             <span
-              className={`grid size-7 place-items-center rounded-full text-[13px] font-bold ${
+              className={`grid size-8 place-items-center rounded-full text-[15px] font-bold ${
                 i <= current ? "bg-brand text-white" : "bg-subtle text-muted"
               }`}
             >
               {i + 1}
             </span>
             <span
-              className={`text-[13px] ${i <= current ? "font-bold" : "text-muted"}`}
+              className={`text-[15px] ${i <= current ? "font-bold" : "text-muted"}`}
               aria-current={i === current ? "step" : undefined}
             >
               {ORDER_STATUS_LABEL[s]}

@@ -1,25 +1,27 @@
 @import "tailwindcss";
 
-/* Warm paper palette shared by the shop pages (see the design canvas) */
+/* Cool Morandi palette shared by the shop pages (see 前台設計慣例 in CLAUDE.md) */
 :root {
-  --background: #faf8f4;
-  --foreground: #241e1a;
+  --background: #f3f5f6;
+  --foreground: #2b3440;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: #ffffff;
-  --color-line: #e1ddd8;
-  --color-subtle: #f2f0ec;
-  --color-muted: #716a65;
-  --color-brand: #b8500f;
-  --color-brand-dark: #8f3d0b;
-  --color-brand-tint: #fdf3ec;
-  --color-brand-soft: #f6e8de;
+  --color-line: #dde2e6;
+  --color-subtle: #e6ebef;
+  --color-muted: #5a6672;
+  /* Borders of controls: stepper buttons, checkboxes, outlined buttons */
+  --color-field: #b9c4cd;
+  --color-brand: #4f6e89;
+  --color-brand-dark: #3d586f;
+  --color-brand-tint: #e9eff3;
+  --color-brand-soft: #dfe7ed;
   /* Darker than LINE's own green so white text stays readable */
   --color-line-green: #05853a;
-  --font-sans: var(--font-jakarta), var(--font-noto-sans-tc), sans-serif;
+  --font-sans: var(--font-dm-sans), var(--font-noto-sans-tc), sans-serif;
 
   /* Admin (cool grey, see the admin design canvas) */
   --font-admin: var(--font-geist, ui-sans-serif), var(--font-noto-sans-tc), sans-serif;

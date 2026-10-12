@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { PlusIcon, TrashIcon, XIcon } from "@/components/icons";
+import { useImperativeHandle, useMemo, useRef, useState } from "react";
+import { ImageIcon, MinusIcon, PlusIcon, XIcon } from "@/components/icons";
 import { MAX_QUANTITY } from "@/lib/validators/order";
 import type { Entry, Notice, PhotoUploader } from "./use-photo-uploader";
 
@@ -16,22 +16,32 @@ const STATUS_LABEL: Record<Entry["status"], string> = {
   missing: "未完成上傳",
 };
 
+/** Lets the step's main button (in the bottom bar) open the file picker. */
+export type PhotoBucketHandle = { openPicker: () => void };
+
 export function PhotoBucket({
+  ref,
   bucket,
   entries,
   notices,
   uploader,
   quantityUnit,
+  laminationPrice,
 }: {
+  ref?: React.Ref<PhotoBucketHandle>;
   bucket: string;
   entries: Entry[];
   notices: Notice[];
   uploader: PhotoUploader;
   /** Show a quantity per photo, counted in this unit (prints or ID-photo sets). */
   quantityUnit?: "張" | "組";
+  /** Per-print lamination (護貝) price; pass it to let each photo pick how many prints to laminate. */
+  laminationPrice?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const openPicker = () => inputRef.current?.click();
+  useImperativeHandle(ref, () => ({ openPicker }));
 
   // Duplicate hint: same SHA-256 inside this group (informational only)
   const duplicates = useMemo(() => {
@@ -47,72 +57,63 @@ export function PhotoBucket({
   const failed = entries.filter((e) => e.status === "failed").length;
   const missing = entries.filter((e) => e.status === "missing").length;
   const prints = entries.reduce((n, e) => n + e.quantity, 0);
-  const sameQty =
-    entries.length > 0 &&
-    entries.every((e) => e.quantity === entries[0].quantity)
-      ? entries[0].quantity
+  const ids = entries.map((e) => e.localId);
+  const laminatable = laminationPrice !== undefined;
+
+  /** The value every photo shares, or null when they differ. */
+  const shared = (pick: (e: Entry) => number) =>
+    entries.length > 0 && entries.every((e) => pick(e) === pick(entries[0]))
+      ? pick(entries[0])
       : null;
-  const bulkBase = sameQty ?? Math.max(1, ...entries.map((e) => e.quantity));
+  const sameQty = shared((e) => e.quantity);
+  const sameLam = shared((e) => e.laminateQuantity);
+  const qtyBase = sameQty ?? Math.max(1, ...entries.map((e) => e.quantity));
+  const lamBase =
+    sameLam ?? Math.max(0, ...entries.map((e) => e.laminateQuantity));
 
   function pick(files: FileList | null) {
     if (files?.length) void uploader.addFiles(bucket, Array.from(files));
   }
 
-  function setAll(q: number) {
-    uploader.setQuantity(
-      entries.map((e) => e.localId),
-      Math.min(MAX_QUANTITY, Math.max(1, q)),
-    );
-  }
-
   return (
-    <div className="grid gap-3.5">
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragging(true);
+    <div
+      className={`grid gap-3.5 rounded-2xl ${
+        dragging ? "outline-brand outline-2 outline-offset-4" : ""
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        pick(e.dataTransfer.files);
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".jpg,.jpeg,image/jpeg"
+        multiple
+        hidden
+        onChange={(e) => {
+          pick(e.target.files);
+          e.target.value = "";
         }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          pick(e.dataTransfer.files);
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className={`border-brand text-brand-dark flex min-h-21 w-full items-center justify-center gap-3 rounded-[18px] border-2 border-dashed text-[26px] font-extrabold transition-colors ${
-            dragging ? "bg-brand-soft" : "bg-brand-tint"
-          }`}
-        >
-          <PlusIcon className="size-7.5" />
-          {entries.length ? "再加照片" : "加照片"}
-        </button>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".jpg,.jpeg,image/jpeg"
-          multiple
-          hidden
-          onChange={(e) => {
-            pick(e.target.files);
-            e.target.value = "";
-          }}
-        />
-      </div>
+      />
 
       {notices.length > 0 && (
         <div
           role="alert"
-          className="rounded-[14px] border border-amber-300 bg-amber-50 p-4 text-lg text-amber-900"
+          className="rounded-[14px] border border-amber-300 bg-amber-50 p-3.5 text-base text-amber-900"
         >
           <div className="flex items-start justify-between gap-2">
             <p className="font-bold">這些檔案沒有加入：</p>
             <button
               type="button"
               onClick={() => uploader.dismissNotices(bucket)}
-              className="-my-2 min-h-11 px-1 text-base underline"
+              className="-my-2 min-h-11 px-1 text-[15px] underline"
             >
               關閉
             </button>
@@ -126,15 +127,35 @@ export function PhotoBucket({
       )}
 
       {missing > 0 && (
-        <p className="rounded-[14px] bg-orange-50 p-4 text-lg text-orange-900">
+        <p className="rounded-[14px] bg-orange-50 p-3.5 text-base text-orange-900">
           有 {missing} 張照片上次沒傳完，請再選一次同一張，或拿掉它。
         </p>
       )}
 
+      {entries.length === 0 && (
+        <button
+          type="button"
+          onClick={openPicker}
+          className="grid justify-items-center gap-2 px-4 py-12 text-center"
+        >
+          <span className="bg-subtle text-brand grid size-21 place-items-center rounded-[22px]">
+            <ImageIcon className="size-10" />
+          </span>
+          <span className="mt-1.5 text-xl font-bold">還沒有照片</span>
+          <span className="text-muted text-[17px] leading-relaxed">
+            按下面的「加照片」，可以一次選很多張。
+            <br />
+            只收 JPG 檔。
+          </span>
+        </button>
+      )}
+
       {entries.length > 0 && (
         <div className="flex items-baseline justify-between gap-2">
-          <h3 className="text-xl font-bold">已選 {entries.length} 張照片</h3>
-          <span className="text-muted text-lg">
+          <h3 className="text-[17px] font-bold">
+            已選 {entries.length} 張照片
+          </h3>
+          <span className="text-muted text-base">
             {done < entries.length || failed > 0 ? (
               <>
                 已上傳 {done}／{entries.length}
@@ -150,63 +171,87 @@ export function PhotoBucket({
       )}
 
       {quantityUnit && entries.length > 1 && (
-        <div className="bg-subtle flex items-center justify-between gap-2 rounded-[18px] py-2.5 pr-2.5 pl-4">
-          <span className="text-xl font-bold">
-            全部都{quantityUnit === "張" ? "洗" : "印"}
-          </span>
-          <span className="flex items-center gap-1">
-            <StepButton
-              onClick={() => setAll(bulkBase - 1)}
-              label={`全部減一${quantityUnit}`}
-            >
-              −
-            </StepButton>
-            <span className="min-w-18 text-center text-xl font-bold">
-              {sameQty ? (
-                <>
-                  <span className="text-[28px] font-extrabold">{sameQty}</span>{" "}
-                  {quantityUnit}
-                </>
-              ) : (
-                "不一樣"
-              )}
-            </span>
-            <StepButton
-              onClick={() => setAll(bulkBase + 1)}
-              label={`全部加一${quantityUnit}`}
-              primary
-            >
-              +
-            </StepButton>
-          </span>
+        <div className="bg-subtle divide-line grid divide-y rounded-2xl pr-1.5 pl-3.5">
+          <CountRow
+            label={`全部${quantityUnit}數`}
+            value={sameQty}
+            unit={quantityUnit}
+            size="lg"
+            onMinus={() => uploader.setQuantity(ids, clampQty(qtyBase - 1))}
+            onPlus={() => uploader.setQuantity(ids, clampQty(qtyBase + 1))}
+            minusLabel={`全部減一${quantityUnit}`}
+            plusLabel={`全部加一${quantityUnit}`}
+          />
+          {laminatable && (
+            <CountRow
+              label="全部護貝"
+              note={`每張 +$${laminationPrice}`}
+              value={sameLam}
+              unit="張"
+              size="lg"
+              onMinus={() => uploader.setLaminateQuantity(ids, lamBase - 1)}
+              onPlus={() => uploader.setLaminateQuantity(ids, lamBase + 1)}
+              minusLabel="全部少護貝一張"
+              plusLabel="全部多護貝一張"
+            />
+          )}
         </div>
       )}
 
       {entries.length > 0 && quantityUnit && (
-        <ul className="grid gap-2.5 md:grid-cols-2">
+        <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
           {entries.map((e) => (
             <li
               key={e.localId}
-              className="border-line bg-card grid content-start gap-2 rounded-[18px] border p-2"
+              className="border-line bg-card grid content-start overflow-hidden rounded-2xl border"
             >
-              <div className="flex items-center gap-2">
-                <Thumb entry={e} className="size-17 min-w-12 shrink" />
-                <div className="min-w-0 flex-1">
-                  <Stepper
-                    value={e.quantity}
-                    onChange={(q) => uploader.setQuantity([e.localId], q)}
-                    label={`${e.fileName} ${quantityUnit}數`}
-                    unit={quantityUnit}
-                  />
-                </div>
-                <button
-                  type="button"
+              <div className="relative">
+                <Thumb entry={e} className="aspect-[3/2] w-full" />
+                <RemoveButton
+                  fileName={e.fileName}
                   onClick={() => void uploader.remove(e.localId)}
-                  aria-label={`移除 ${e.fileName}`}
-                  className="text-muted grid size-11 shrink-0 place-items-center rounded-xl"
-                >
-                  <TrashIcon className="size-6.5" />
-                </button>
+                />
+              </div>
+              <div className="grid px-1 pt-1 pb-1">
+                <CountRow
+                  label={`${quantityUnit}數`}
+                  groupLabel={`${e.fileName} ${quantityUnit}數`}
+                  value={e.quantity}
+                  onMinus={() =>
+                    uploader.setQuantity([e.localId], clampQty(e.quantity - 1))
+                  }
+                  onPlus={() =>
+                    uploader.setQuantity([e.localId], clampQty(e.quantity + 1))
+                  }
+                  minusDisabled={e.quantity <= 1}
+                  plusDisabled={e.quantity >= MAX_QUANTITY}
+                  minusLabel={`減一${quantityUnit}`}
+                  plusLabel={`加一${quantityUnit}`}
+                />
+                {laminatable && (
+                  <CountRow
+                    label="護貝"
+                    groupLabel={`${e.fileName} 護貝張數`}
+                    value={e.laminateQuantity}
+                    active={e.laminateQuantity > 0}
+                    onMinus={() =>
+                      uploader.setLaminateQuantity(
+                        [e.localId],
+                        e.laminateQuantity - 1,
+                      )
+                    }
+                    onPlus={() =>
+                      uploader.setLaminateQuantity(
+                        [e.localId],
+                        e.laminateQuantity + 1,
+                      )
+                    }
+                    minusDisabled={e.laminateQuantity <= 0}
+                    plusDisabled={e.laminateQuantity >= e.quantity}
+                    minusLabel="少護貝一張"
+                    plusLabel="多護貝一張"
+                  />
+                )}
               </div>
               <RowStatus
                 entry={e}
@@ -222,15 +267,11 @@ export function PhotoBucket({
         <ul className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5">
           {entries.map((e) => (
             <li key={e.localId} className="relative">
-              <Thumb entry={e} className="aspect-square w-full" />
-              <button
-                type="button"
+              <Thumb entry={e} className="aspect-square w-full rounded-xl" />
+              <RemoveButton
+                fileName={e.fileName}
                 onClick={() => void uploader.remove(e.localId)}
-                aria-label={`移除 ${e.fileName}`}
-                className="absolute top-1 right-1 grid size-10 place-items-center rounded-full bg-[#241e1a]/75 text-white"
-              >
-                <XIcon className="size-5.5" />
-              </button>
+              />
               <TileStatus
                 entry={e}
                 onRetry={() => void uploader.retry(e.localId)}
@@ -243,11 +284,11 @@ export function PhotoBucket({
   );
 }
 
+const clampQty = (n: number) => Math.min(MAX_QUANTITY, Math.max(1, n));
+
 function Thumb({ entry: e, className }: { entry: Entry; className: string }) {
   return (
-    <div
-      className={`bg-subtle aspect-square overflow-hidden rounded-xl ${className}`}
-    >
+    <div className={`bg-subtle overflow-hidden ${className}`}>
       {e.previewUrl ? (
         // Local blob: / presigned R2 URLs; next/image can't optimize either
         // eslint-disable-next-line @next/next/no-img-element
@@ -265,7 +306,108 @@ function Thumb({ entry: e, className }: { entry: Entry; className: string }) {
   );
 }
 
-/** Upload progress / failure under a photo row; only a duplicate hint once uploaded. */
+/** Round ✕ on a thumbnail's top-right corner; the tap target is larger than the disc. */
+function RemoveButton({
+  fileName,
+  onClick,
+}: {
+  fileName: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`移除 ${fileName}`}
+      className="absolute top-0 right-0 grid size-12 place-items-center text-white"
+    >
+      <span className="bg-foreground/80 grid size-8 place-items-center rounded-full">
+        <XIcon className="size-4" />
+      </span>
+    </button>
+  );
+}
+
+/** "Label  −  n  +" row: per-photo counts and the apply-to-all rows above the grid. */
+function CountRow({
+  label,
+  groupLabel,
+  note,
+  value,
+  unit,
+  size = "md",
+  active,
+  onMinus,
+  onPlus,
+  minusDisabled,
+  plusDisabled,
+  minusLabel,
+  plusLabel,
+}: {
+  label: string;
+  /** Accessible name when the visible label alone is ambiguous. */
+  groupLabel?: string;
+  note?: string;
+  /** null = the photos differ. */
+  value: number | null;
+  unit?: string;
+  size?: "md" | "lg";
+  /** Tinted background, e.g. when a photo has prints to laminate. */
+  active?: boolean;
+  onMinus: () => void;
+  onPlus: () => void;
+  minusDisabled?: boolean;
+  plusDisabled?: boolean;
+  minusLabel: string;
+  plusLabel: string;
+}) {
+  const lg = size === "lg";
+  return (
+    <div
+      role="group"
+      aria-label={groupLabel ?? label}
+      className={`flex items-center ${lg ? "min-h-14 gap-1" : "rounded-xl pl-2"} ${
+        active ? "bg-brand-tint" : ""
+      }`}
+    >
+      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+        <span className={`font-bold ${lg ? "text-[17px]" : "text-base"}`}>
+          {label}
+        </span>
+        {note && (
+          <span className="text-muted text-sm font-semibold">{note}</span>
+        )}
+      </span>
+      <StepButton
+        onClick={onMinus}
+        label={minusLabel}
+        disabled={minusDisabled}
+        size={size}
+      >
+        <MinusIcon className={lg ? "size-4.5" : "size-4"} />
+      </StepButton>
+      <span
+        className={`text-center font-bold tabular-nums ${
+          lg ? "min-w-14 text-lg" : "min-w-7.5 text-[21px]"
+        }`}
+        aria-live="polite"
+      >
+        {value === null ? "不一樣" : unit ? `${value} ${unit}` : value}
+      </span>
+      <StepButton
+        onClick={onPlus}
+        label={plusLabel}
+        disabled={plusDisabled}
+        size={size}
+        primary
+      >
+        <PlusIcon className={lg ? "size-4.5" : "size-4"} />
+      </StepButton>
+    </div>
+  );
+}
+
+/** Upload progress / failure under a photo card; only a duplicate hint once uploaded. */
 function RowStatus({
   entry: e,
   duplicate,
@@ -278,7 +420,7 @@ function RowStatus({
   if (e.status === "uploaded") {
     if (!duplicate) return null;
     return (
-      <p className="px-1 pb-1 text-base font-bold text-[#7a4b00]">
+      <p className="px-3 pb-2 text-sm font-bold text-amber-800">
         跟另一張一樣，可以拿掉一張
       </p>
     );
@@ -286,7 +428,7 @@ function RowStatus({
   const bad = e.status === "failed" || e.status === "missing";
   return (
     <div
-      className={`grid gap-1.5 px-1 pb-1 text-base font-bold ${
+      className={`grid gap-1.5 px-3 pb-2 text-sm font-bold ${
         bad ? "text-red-700" : "text-muted"
       }`}
     >
@@ -306,7 +448,7 @@ function RowStatus({
         )}
       </span>
       {(e.status === "uploading" || e.status === "confirming") && (
-        <span className="bg-line h-2 overflow-hidden rounded-full">
+        <span className="bg-line h-1.5 overflow-hidden rounded-full">
           <span
             className="bg-brand block h-full rounded-full transition-[width]"
             style={{ width: `${e.progress * 100}%` }}
@@ -331,7 +473,7 @@ function TileStatus({
   return (
     <div
       className={`absolute inset-x-0 bottom-0 grid gap-1 rounded-b-xl p-1.5 text-[13px] font-medium text-white ${
-        bad ? "bg-red-800/85" : "bg-[#241e1a]/65"
+        bad ? "bg-red-800/85" : "bg-foreground/65"
       }`}
     >
       <span className="flex items-center justify-between gap-1">
@@ -382,39 +524,44 @@ export function Stepper({
         onClick={() => set(value - 1)}
         label={`減一${unit ?? ""}`}
         disabled={value <= min}
+        size="lg"
       >
-        −
+        <MinusIcon className="size-4.5" />
       </StepButton>
       <span
-        className="min-w-16 text-center text-xl font-bold tabular-nums"
+        className="min-w-14 text-center text-lg font-bold tabular-nums"
         aria-live="polite"
       >
-        <span className="text-[30px] leading-none font-extrabold">{value}</span>
+        {value}
         {unit && ` ${unit}`}
       </span>
       <StepButton
         onClick={() => set(value + 1)}
         label={`加一${unit ?? ""}`}
         disabled={value >= MAX_QUANTITY}
+        size="lg"
         primary
       >
-        +
+        <PlusIcon className="size-4.5" />
       </StepButton>
     </div>
   );
 }
 
+/** Round −/+ button: the visible disc sits inside a larger tap target. */
 function StepButton({
   onClick,
   label,
   disabled,
   primary,
+  size,
   children,
 }: {
   onClick: () => void;
   label: string;
   disabled?: boolean;
   primary?: boolean;
+  size: "md" | "lg";
   children: React.ReactNode;
 }) {
   return (
@@ -423,13 +570,21 @@ function StepButton({
       onClick={onClick}
       aria-label={label}
       disabled={disabled}
-      className={`grid size-13 shrink-0 place-items-center rounded-full border-2 text-[32px] leading-none font-bold disabled:opacity-30 ${
-        primary
-          ? "border-brand bg-brand text-white"
-          : "bg-card border-[#c9c2bb]"
+      className={`grid shrink-0 place-items-center disabled:opacity-35 ${
+        size === "lg" ? "size-12" : "size-11"
       }`}
     >
-      {children}
+      <span
+        className={`grid place-items-center rounded-full ${
+          size === "lg" ? "size-10" : "size-9"
+        } ${
+          primary
+            ? "bg-brand text-white"
+            : "border-field bg-card border-[1.5px]"
+        }`}
+      >
+        {children}
+      </span>
     </button>
   );
 }

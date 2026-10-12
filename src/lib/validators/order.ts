@@ -34,14 +34,10 @@ export const lookupOrderInput = z.object({
 const sizeId = z.int().positive();
 const productId = z.int().positive();
 
-export const createGroupInput = z.object({
-  printSizeId: sizeId,
-  laminate: z.boolean().default(false),
-});
+export const createGroupInput = z.object({ printSizeId: sizeId });
 export const updateGroupInput = z.object({
   groupId: id,
-  printSizeId: sizeId.optional(),
-  laminate: z.boolean().optional(),
+  printSizeId: sizeId,
 });
 export const groupIdInput = z.object({ groupId: id });
 export const photoIdInput = z.object({ photoId: id });
@@ -78,12 +74,21 @@ export const confirmPhotosInput = z.object({
   photoIds: z.array(id).min(1).max(100),
 });
 
-/** Quantity per photo (prints, or sets for ID photos) and, for ID photos, the chosen set. */
-const photoOption = z.object({
-  photoId: id,
-  quantity,
-  productId: productId.optional(),
-});
+/**
+ * Quantity per photo (prints, or sets for ID photos), how many of those prints
+ * get laminated and, for ID photos, the chosen set.
+ */
+const photoOption = z
+  .object({
+    photoId: id,
+    quantity,
+    laminateQuantity: z.int().min(0).max(MAX_QUANTITY).default(0),
+    productId: productId.optional(),
+  })
+  .refine((v) => v.laminateQuantity <= v.quantity, {
+    message: "護貝張數不能超過沖洗張數",
+    path: ["laminateQuantity"],
+  });
 
 export const savePhotoOptionsInput = z.object({
   items: z.array(photoOption).min(1).max(1000),

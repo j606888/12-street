@@ -224,7 +224,11 @@ async function AdminOrder({
                   fileName: p.fileName,
                   folder: p.folder,
                   quantity: p.quantity
-                    ? `${p.quantity.n} ${p.quantity.unit}`
+                    ? `${p.quantity.n} ${p.quantity.unit}${
+                        p.quantity.laminated
+                          ? `（護貝 ${p.quantity.laminated}）`
+                          : ""
+                      }`
                     : "—",
                   size: formatBytes(p.sizeBytes),
                   pending: p.status === "pending",

@@ -48,6 +48,7 @@ export async function loadOrderLines(orderId: string) {
         laminationUnitPrice: orderGroups.laminationUnitPrice,
         photoCount: count(photos.id),
         prints: sum(photos.quantity).mapWith(Number),
+        laminatedPrints: sum(photos.laminateQuantity).mapWith(Number),
       })
       .from(orderGroups)
       .innerJoin(printSizes, eq(printSizes.id, orderGroups.printSizeId))
