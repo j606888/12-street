@@ -272,8 +272,8 @@ async function PriceList() {
         )}
         <ServiceCard
           icon={<BookIcon className="size-6" />}
-          title="相冊、馬克杯等"
-          desc="客製化商品"
+          title="客製化商品"
+          desc="相冊、馬克杯等都可以做"
           price="專人報價"
         />
       </div>

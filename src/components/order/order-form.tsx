@@ -408,7 +408,7 @@ export function OrderForm({
           )}
           <ServiceLink
             icon={<BookIcon className="size-6.5" />}
-            title="相冊、馬克杯"
+            title="客製化商品"
             price="專人報價"
             onClick={() => go({ kind: "custom" })}
           />
@@ -607,7 +607,7 @@ export function OrderForm({
     return (
       <div className="grid gap-4">
         <StepHeader step={2} onBack={() => go(backFromItems)} />
-        <h1 className={h1Class}>相冊、馬克杯</h1>
+        <h1 className={h1Class}>客製化商品</h1>
         <p className="text-muted text-[17px]">送出後，店家會跟您聯絡報價。</p>
         <PhotoBucket
           ref={bucketRef}
@@ -707,7 +707,7 @@ export function OrderForm({
           {(customEntries.length > 0 || customNote) && (
             <SummaryRow
               photos={customEntries}
-              title="相冊、馬克杯"
+              title="客製化商品"
               desc={
                 customEntries.length
                   ? `${customEntries.length} 張照片`
@@ -750,7 +750,7 @@ export function OrderForm({
           {catalog.idPhotoSets.length > 0 && (
             <Chip onClick={() => go({ kind: "id_photo" })}>＋ 證件照</Chip>
           )}
-          <Chip onClick={() => go({ kind: "custom" })}>＋ 相冊、馬克杯</Chip>
+          <Chip onClick={() => go({ kind: "custom" })}>＋ 客製化商品</Chip>
         </div>
       </section>
 
