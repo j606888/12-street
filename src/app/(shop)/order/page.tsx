@@ -3,7 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { OrderForm } from "@/components/order/order-form";
 import { ShopHeader } from "@/components/shop-header";
-import { findDraftId, getOwner, loadCatalog, loadDraft } from "@/lib/draft";
+import {
+  findDraftId,
+  getOwner,
+  lastContactEmail,
+  loadCatalog,
+  loadDraft,
+} from "@/lib/draft";
 
 export const metadata: Metadata = { title: "線上下單｜線上洗照片" };
 
@@ -30,7 +36,7 @@ async function MemberChip() {
     return (
       <Link
         href="/orders/mine"
-        className="flex h-9 max-w-32 items-center rounded-full border border-line bg-card px-3 text-[13px] font-semibold"
+        className="border-line bg-card flex h-12 max-w-36 shrink-0 items-center rounded-full border px-4 text-[17px] font-bold"
       >
         <span className="truncate">{owner.name}</span>
       </Link>
@@ -39,7 +45,7 @@ async function MemberChip() {
   return (
     <Link
       href="/login?next=/order"
-      className="flex h-9 items-center rounded-full bg-[#06c755] px-3 text-[13px] font-bold text-white"
+      className="bg-line-green flex h-12 shrink-0 items-center rounded-full px-4 text-[17px] font-bold text-white"
     >
       LINE 登入
     </Link>
@@ -48,9 +54,10 @@ async function MemberChip() {
 
 async function OrderLoader() {
   const owner = await getOwner();
-  const [catalog, draftId] = await Promise.all([
+  const [catalog, draftId, email] = await Promise.all([
     loadCatalog(),
     findDraftId(owner),
+    owner.kind === "member" ? lastContactEmail(owner.userId) : null,
   ]);
   const draft = draftId ? await loadDraft(draftId) : null;
   if (!catalog.sizes.length) return <p>目前沒有可選的沖印尺寸，請稍後再試。</p>;
@@ -60,7 +67,7 @@ async function OrderLoader() {
       draft={draft}
       member={
         owner.kind === "member"
-          ? { name: owner.name, phone: owner.phone }
+          ? { name: owner.name, phone: owner.phone, email }
           : null
       }
     />

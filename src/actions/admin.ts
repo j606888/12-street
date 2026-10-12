@@ -2,9 +2,11 @@
 
 import { and, eq, ne, notExists, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
+import { after } from "next/server";
 import type { z } from "zod";
 import { loadOrderPhotos } from "@/lib/admin";
 import { db } from "@/lib/db";
+import { sendOrderEmail } from "@/lib/email";
 import { purgePhotoRows } from "@/lib/cleanup";
 import { presignGet } from "@/lib/r2";
 import { getAdmin } from "@/lib/session";
@@ -54,12 +56,24 @@ export async function updateOrderStatus(input: unknown): Promise<Result> {
   const { data, error } = parse(updateOrderStatusInput, input);
   if (!data) return { ok: false, error };
 
-  const updated = await db
-    .update(orders)
-    .set({ status: data.status })
-    .where(submitted(data.orderId))
-    .returning({ id: orders.id });
-  if (!updated.length) return NO_ORDER;
+  const previous = await db.transaction(async (tx) => {
+    const [order] = await tx
+      .select({ status: orders.status })
+      .from(orders)
+      .where(submitted(data.orderId))
+      .for("update");
+    if (!order) return null;
+    await tx
+      .update(orders)
+      .set({ status: data.status })
+      .where(eq(orders.id, data.orderId));
+    return order.status;
+  });
+  if (!previous) return NO_ORDER;
+  // Only tell the customer when the order actually moved to that status
+  const { status } = data;
+  if (previous !== status && (status === "ready" || status === "cancelled"))
+    after(() => sendOrderEmail(data.orderId, status));
   refresh();
   return { ok: true };
 }
@@ -69,15 +83,26 @@ export async function updatePaymentStatus(input: unknown): Promise<Result> {
   const { data, error } = parse(updatePaymentStatusInput, input);
   if (!data) return { ok: false, error };
 
-  const updated = await db
-    .update(orders)
-    .set({
-      paymentStatus: data.paymentStatus,
-      paidAt: data.paymentStatus === "paid" ? new Date() : null,
-    })
-    .where(submitted(data.orderId))
-    .returning({ id: orders.id });
-  if (!updated.length) return NO_ORDER;
+  const previous = await db.transaction(async (tx) => {
+    const [order] = await tx
+      .select({ paymentStatus: orders.paymentStatus })
+      .from(orders)
+      .where(submitted(data.orderId))
+      .for("update");
+    if (!order) return null;
+    await tx
+      .update(orders)
+      .set({
+        paymentStatus: data.paymentStatus,
+        paidAt: data.paymentStatus === "paid" ? new Date() : null,
+      })
+      .where(eq(orders.id, data.orderId));
+    return order.paymentStatus;
+  });
+  if (!previous) return NO_ORDER;
+  // A reviewed transfer is worth confirming; cash paid at the counter is not
+  if (previous === "pending_review" && data.paymentStatus === "paid")
+    after(() => sendOrderEmail(data.orderId, "paid"));
   refresh();
   return { ok: true };
 }

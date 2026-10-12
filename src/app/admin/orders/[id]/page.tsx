@@ -23,6 +23,7 @@ import {
   ArrowLeftIcon,
   ChevronRightIcon,
   NoteIcon,
+  MailIcon,
   PhoneIcon,
 } from "@/components/icons";
 import { OrderLines } from "@/components/order/order-detail";
@@ -341,6 +342,15 @@ async function AdminOrder({
                 >
                   <PhoneIcon className="size-4" />
                   {order.contactPhone}
+                </a>
+              )}
+              {order.contactEmail && (
+                <a
+                  href={`mailto:${order.contactEmail}`}
+                  className="font-admin-mono text-accent hover:text-accent-dark flex w-fit items-center gap-2 py-1 text-[13px] break-all"
+                >
+                  <MailIcon className="size-4 shrink-0" />
+                  {order.contactEmail}
                 </a>
               )}
               {member && note && (

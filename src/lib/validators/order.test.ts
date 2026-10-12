@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lookupOrderInput, orderNoSchema } from "./order";
+import { emailSchema, lookupOrderInput, orderNoSchema } from "./order";
 
 describe("orderNoSchema", () => {
   it("normalizes case and whitespace", () => {
@@ -21,5 +21,16 @@ describe("lookupOrderInput", () => {
         phone: "0987-654 321",
       }),
     ).toEqual({ orderNo: "P20261010-0002", phone: "0987654321" });
+  });
+});
+
+describe("emailSchema", () => {
+  it("trims and lowercases", () => {
+    expect(emailSchema.parse("  Guest@Example.COM ")).toBe("guest@example.com");
+  });
+
+  it("rejects malformed addresses", () => {
+    expect(emailSchema.safeParse("guest@").success).toBe(false);
+    expect(emailSchema.safeParse("").success).toBe(false);
   });
 });

@@ -53,6 +53,7 @@ test("guest places an order and looks it up from a fresh browser", async ({
 
   await page.getByLabel(/姓名/).fill("[E2E] 訪客");
   await page.getByLabel(/手機/).fill(PHONE);
+  await page.getByLabel(/Email/).fill("delivered@resend.dev");
   await page.getByLabel("取件時付現金").check();
   await page.getByRole("button", { name: "送出訂單" }).click();
 
@@ -65,7 +66,7 @@ test("guest places an order and looks it up from a fresh browser", async ({
   orderNo = no;
   trackOrder(orderId, orderNo);
   await expect(
-    page.getByRole("heading", { name: "謝謝！訂單收到了" }),
+    page.getByRole("heading", { name: "訂單送出了" }),
   ).toBeVisible();
 
   // Fresh browser: wrong phone / nonexistent number give the same generic error

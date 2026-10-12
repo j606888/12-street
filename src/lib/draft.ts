@@ -41,6 +41,17 @@ export async function getOwner(): Promise<Owner> {
   };
 }
 
+/** The email a member gave on their latest order, to prefill the next one. */
+export async function lastContactEmail(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ email: orders.contactEmail })
+    .from(orders)
+    .where(and(eq(orders.userId, userId), ne(orders.status, "draft")))
+    .orderBy(desc(orders.submittedAt))
+    .limit(1);
+  return row?.email ?? null;
+}
+
 function ownerFilter(owner: Owner) {
   if (owner.kind === "member") return eq(orders.userId, owner.userId);
   if (!owner.draftToken) return undefined;

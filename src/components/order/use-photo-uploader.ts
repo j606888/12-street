@@ -517,8 +517,8 @@ export function usePhotoUploader(
     [changeEntries],
   );
   const setIdPhotoSet = useCallback(
-    (localId: string, productId: number) =>
-      changeEntries([localId], { productId }),
+    (localIds: string[], productId: number) =>
+      changeEntries(localIds, { productId }),
     [changeEntries],
   );
 

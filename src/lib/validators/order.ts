@@ -13,6 +13,13 @@ export const phoneSchema = z
   .transform((s) => s.replace(/[\s-]/g, ""))
   .pipe(z.string().regex(/^09\d{8}$/, "請輸入 09 開頭的 10 碼手機號碼"));
 
+/** Where order reminders are sent; guests must give one at checkout. */
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .pipe(z.email("請輸入正確的 Email").max(254));
+
 /** Order number as typed by a customer: p20261010-0001 → P20261010-0001 */
 export const orderNoSchema = z
   .string()
@@ -91,6 +98,7 @@ export const submitOrderInput = z
   .object({
     contactName: z.string().trim().min(1, "請填寫姓名").max(50),
     contactPhone: phoneSchema,
+    contactEmail: emailSchema.optional(),
     note: z.string().trim().max(1000).optional(),
     customNote: z.string().trim().max(2000).optional(),
     photoOptions: z.array(photoOption).max(1000),

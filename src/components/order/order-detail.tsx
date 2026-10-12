@@ -34,6 +34,9 @@ export function OrderDetail({ order }: { order: OrderRow }) {
         <p>
           {order.contactName}・{order.contactPhone}
         </p>
+        {order.contactEmail && (
+          <p className="break-all">{order.contactEmail}</p>
+        )}
         {order.note && (
           <p className="whitespace-pre-line text-muted">
             備註：{order.note}

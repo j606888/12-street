@@ -152,6 +152,12 @@ export const PhoneIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const MailIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1M3.5 7.5 12 13l8.5-5.5" />
+  </Icon>
+);
+
 export const TrashIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />

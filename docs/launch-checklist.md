@@ -105,7 +105,15 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 - [ ] 隔天確認 Vercel Cron 有自動執行（Logs 出現 `cleanup`）
 - [ ] 確認 Vercel Logs 沒有 DB 權限錯誤（`permission denied`）；如果有，代表 `photo_app` 少了授權，回頭檢查 [rds-setup.sql](rds-setup.sql) 的預設權限
 
-## 8. 日後維護提醒
+## 8. 訂單通知信（Resend）
+
+- [ ] 在瀏覽器同意 Resend 的 Marketplace 條款後，執行 `vercel integration add resend --no-claim --no-env-pull`（會把 `RESEND_API_KEY` 加到 Vercel 專案）
+- [ ] 在 Resend 後台新增網域 `12-street.com`，把它給的 DNS 記錄（DKIM、SPF）加到 Route 53，等驗證通過
+- [ ] 在 Vercel 設定 `EMAIL_FROM`（例如 `十二街寫真攝影館 <noreply@12-street.com>`）和 `EMAIL_REPLY_TO`（店家實際收信的信箱；網域本身沒有收信信箱）
+- [ ] `RESEND_API_KEY` 或 `EMAIL_FROM` 沒設時不會寄信，也不會報錯
+- 寄信時機：訂單成立、轉帳款項確認（待確認 → 已付款）、可取件、訂單取消。訂單沒有 Email（會員沒填）就不寄
+
+## 9. 日後維護提醒
 
 - 新增 migration（`pnpm db:generate`）後，要再從本機對 RDS 執行 `(set -a; source .env.rds.local; set +a; pnpm db:migrate)`，不然 app 會用到還不存在的欄位
 - 資料表由 `photo_migrator` 建立，`photo_app` 的權限靠預設權限自動取得；如果資料表是別的帳號建立的，需要手動 `GRANT`

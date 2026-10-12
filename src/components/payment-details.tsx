@@ -31,7 +31,7 @@ export function PaymentDetails({ method }: { method: PaymentMethod }) {
             href={linePayUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-fit rounded-md bg-[#06C755] px-3 py-1.5 font-medium text-white"
+            className="bg-line-green mt-1 flex min-h-13 w-fit items-center rounded-xl px-5 font-bold text-white"
           >
             加入 LINE 好友
           </a>
@@ -42,7 +42,9 @@ export function PaymentDetails({ method }: { method: PaymentMethod }) {
   return (
     <div className="grid gap-1">
       <p>請轉帳到以下帳戶：</p>
-      <p className="font-mono whitespace-pre-line">{bankAccount || NOT_SET}</p>
+      <p className="text-[1.2em] font-bold whitespace-pre-line">
+        {bankAccount || NOT_SET}
+      </p>
     </div>
   );
 }

@@ -85,6 +85,7 @@ export const orders = pgTable(
     draftToken: text("draft_token").unique(),
     contactName: text("contact_name"),
     contactPhone: text("contact_phone"),
+    contactEmail: text("contact_email"), // required for guests; reminders go here
     note: text("note"),
     customNote: text("custom_note"), // 客製化製作 notes; details discussed via LINE
     paymentMethod: paymentMethod("payment_method"),

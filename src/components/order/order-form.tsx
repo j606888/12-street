@@ -6,9 +6,10 @@ import { getTransferProofUploadUrl, submitOrder } from "@/actions/order";
 import {
   ArrowRightIcon,
   BookIcon,
+  CheckIcon,
   ChevronLeftIcon,
-  ChevronRightIcon,
   IdCardIcon,
+  ImageIcon,
   PlusIcon,
 } from "@/components/icons";
 import {
@@ -18,7 +19,11 @@ import {
 } from "@/components/payment-details";
 import type { Catalog, DraftView } from "@/lib/draft";
 import { groupCharges, itemSubtotal, MIN_GROUP_CHARGE } from "@/lib/pricing";
-import { MAX_PROOF_BYTES, phoneSchema } from "@/lib/validators/order";
+import {
+  emailSchema,
+  MAX_PROOF_BYTES,
+  phoneSchema,
+} from "@/lib/validators/order";
 import { PhotoBucket, Stepper } from "./photo-bucket";
 import { putFile } from "./upload-utils";
 import {
@@ -28,7 +33,11 @@ import {
   usePhotoUploader,
 } from "./use-photo-uploader";
 
-type Member = { name: string; phone: string | null } | null;
+type Member = {
+  name: string;
+  phone: string | null;
+  email: string | null;
+} | null;
 
 type Proof =
   | { status: "idle" }
@@ -45,28 +54,20 @@ type View =
   | { kind: "checkout" };
 
 /** Checkout fields that can block submitting, in on-screen order. */
-type FieldKey = "content" | "name" | "phone" | "payment";
-const FIELD_ORDER: FieldKey[] = ["content", "name", "phone", "payment"];
+type FieldKey = "content" | "name" | "phone" | "email" | "payment";
+const FIELD_ORDER: FieldKey[] = [
+  "content",
+  "name",
+  "phone",
+  "email",
+  "payment",
+];
 type FieldErrors = Partial<Record<FieldKey, string>>;
 const fieldId = (key: FieldKey) => `checkout-${key}`;
 
-const fmt = (n: number) => `NT$ ${n.toLocaleString("zh-TW")}`;
+const fmt = (n: number) => `$${n.toLocaleString("zh-TW")}`;
 
-const SIZE_TAG: Record<string, string> = { "4x6": "最常見" };
-
-const PAYMENT_HINT: Record<PaymentMethod, string> = {
-  cash_on_pickup: "到店取件時再付",
-  line_money: "加店家 LINE 好友付款",
-  bank_transfer: "轉帳後填末五碼或上傳截圖",
-};
-
-// From the shop owner's 證件照 sheet (docs/owner-pricing.md)
-const ID_PHOTO_SIZES = [
-  ["5cm × 5cm", "美國簽證、印度簽證"],
-  ["一般兩吋", "學生證、兵役體檢、履歷表、落地簽證、健保卡、國際駕照"],
-  ["大頭兩吋", "身分證、護照、英／泰／馬／菲簽證、外僑居留證"],
-  ["一吋", "駕照、殘障手冊"],
-] as const;
+const SIZE_TAG: Record<string, string> = { "4x6": "最多人洗" };
 
 export function OrderForm({
   catalog,
@@ -77,11 +78,11 @@ export function OrderForm({
   draft: DraftView | null;
   member: Member;
 }) {
-  const uploader = usePhotoUploader(
-    draft,
-    catalog.sizes[0]?.id ?? 0,
-    catalog.idPhotoSets[0]?.id,
+  // One ID-photo set for the whole order; new uploads pick it up as their default
+  const [idSetId, setIdSetId] = useState(
+    () => draft?.idPhotos[0]?.productId ?? catalog.idPhotoSets[0]?.id,
   );
+  const uploader = usePhotoUploader(draft, catalog.sizes[0]?.id ?? 0, idSetId);
   const { groups, entries, notices } = uploader;
 
   const [view, setView] = useState<View>(() =>
@@ -91,6 +92,7 @@ export function OrderForm({
   const [customNote, setCustomNote] = useState("");
   const [contactName, setContactName] = useState(member?.name ?? "");
   const [contactPhone, setContactPhone] = useState(member?.phone ?? "");
+  const [contactEmail, setContactEmail] = useState(member?.email ?? "");
   const [note, setNote] = useState("");
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_pickup");
@@ -180,6 +182,11 @@ export function OrderForm({
       found.phone = contactPhone.trim()
         ? phone.error.issues[0].message
         : "請填寫手機號碼";
+    // Guests must leave an email; members may skip it
+    const email = emailSchema.safeParse(contactEmail);
+    if (contactEmail.trim()) {
+      if (!email.success) found.email = email.error.issues[0].message;
+    } else if (!member) found.email = "請填寫 Email";
     if (paymentMethod === "bank_transfer") {
       if (proof.status === "uploading")
         found.payment = "轉帳截圖還在上傳中，請稍等";
@@ -202,11 +209,17 @@ export function OrderForm({
     el.focus({ preventScroll: true });
   }
 
+  function pickIdSet(productId: number) {
+    setIdSetId(productId);
+    uploader.setIdPhotoSet(
+      idPhotoEntries.map((e) => e.localId),
+      productId,
+    );
+  }
+
   /** Reuse an empty group for the picked size, otherwise open a new one. */
   function startGroup(printSizeId: number) {
-    const empty = groups.find(
-      (g) => !entries.some((e) => e.bucket === g.key),
-    );
+    const empty = groups.find((g) => !entries.some((e) => e.bucket === g.key));
     if (empty) {
       if (empty.printSizeId !== printSizeId)
         void uploader.updateGroupOptions(empty.key, { printSizeId });
@@ -257,6 +270,7 @@ export function OrderForm({
       const res = await submitOrder({
         contactName,
         contactPhone,
+        contactEmail: contactEmail.trim() || undefined,
         note: note || undefined,
         customNote: customNote || undefined,
         photoOptions: entries
@@ -285,7 +299,9 @@ export function OrderForm({
     });
   }
 
-  const backFromItems: View = hasContent ? { kind: "checkout" } : { kind: "pick" };
+  const backFromItems: View = hasContent
+    ? { kind: "checkout" }
+    : { kind: "pick" };
   const currentGroup =
     view.kind === "group"
       ? groupLines.find((g) => g.key === view.key)
@@ -296,88 +312,73 @@ export function OrderForm({
 
   // ---- 選尺寸 ----
   if (screen === "pick") {
+    const minimumSizes = catalog.sizes
+      .filter((s) => s.price < MIN_GROUP_CHARGE)
+      .map((s) => s.label);
     return (
-      <div className="grid gap-5">
-        <div>
-          <h1 className="text-[26px] font-extrabold tracking-tight">
-            要洗什麼照片？
-          </h1>
-          <p className="mt-1.5 text-sm leading-relaxed text-muted">
-            先選尺寸，再把這批照片一次丟進來。要洗不同尺寸，之後再加一組就好。
-          </p>
-        </div>
-
-        <Card>
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-[15px] font-bold">沖印照片</h2>
-            <span className="text-xs text-muted">單價／張</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {catalog.sizes.map((s) => (
+      <div className="grid gap-4">
+        <StepHeader
+          step={1}
+          onBack={hasContent ? () => go({ kind: "checkout" }) : undefined}
+        />
+        <h1 className={h1Class}>要洗哪個尺寸？</h1>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {catalog.sizes.map((s) => {
+            const tag = SIZE_TAG[s.code];
+            return (
               <button
                 key={s.id}
                 type="button"
                 onClick={() => startGroup(s.id)}
-                className="flex min-h-24 flex-col items-start gap-1 rounded-xl border border-line bg-background p-3.5 text-left transition-colors hover:border-brand hover:bg-brand-tint"
+                className={`hover:border-brand hover:bg-brand-tint relative flex min-h-27 flex-col justify-center gap-1 rounded-[18px] border-2 px-4 py-3.5 text-left transition-colors ${
+                  tag ? "border-brand bg-brand-tint" : "border-line bg-card"
+                }`}
               >
-                <span className="flex w-full items-center justify-between gap-1">
-                  <span className="text-xl font-extrabold">{s.label}</span>
-                  {SIZE_TAG[s.code] && (
-                    <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-bold text-brand-dark">
-                      {SIZE_TAG[s.code]}
-                    </span>
-                  )}
+                {tag && (
+                  <span className="bg-brand absolute -top-3 right-3 rounded-full px-3 py-0.5 text-[15px] font-bold text-white">
+                    {tag}
+                  </span>
+                )}
+                <span className="text-3xl leading-tight font-extrabold">
+                  {s.label}
                 </span>
-                <span className="text-[15px] font-bold">${s.price}</span>
-                <span className="text-xs text-muted">
-                  護貝 +${s.laminationPrice}
+                <span className="text-brand-dark text-xl font-bold">
+                  一張 ${s.price}
                 </span>
               </button>
-            ))}
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted">
-            <strong className="font-semibold text-foreground">
-              低消 ${MIN_GROUP_CHARGE}：
-            </strong>
-            同一組的沖洗費未滿 ${MIN_GROUP_CHARGE} 以 ${MIN_GROUP_CHARGE}{" "}
-            計（例：${catalog.sizes[0].price} 的尺寸只洗 1 張，收 $
-            {Math.max(MIN_GROUP_CHARGE, catalog.sizes[0].price)}
-            ）；有護貝的話，護貝費也一樣。護貝在下一步勾選。
+            );
+          })}
+        </div>
+        {minimumSizes.length > 0 && (
+          <p className="text-muted text-[17px]">
+            {minimumSizes.join("、")} 只洗一張時收 ${MIN_GROUP_CHARGE}。
           </p>
-        </Card>
+        )}
 
-        <section className="grid gap-2.5">
-          <h2 className="text-[15px] font-bold">其他服務</h2>
-          {catalog.idPhotoSets.length > 0 && (
-            <ServiceLink
-              icon={<IdCardIcon className="size-[22px]" />}
-              title="證件照"
-              desc={`身分證、護照、駕照、簽證 · $${catalog.idPhotoSets[0].price}／組`}
-              onClick={() => go({ kind: "id_photo" })}
-            />
-          )}
+        <h2 className="mt-3 text-2xl font-black">其他</h2>
+        {catalog.idPhotoSets.length > 0 && (
           <ServiceLink
-            icon={<BookIcon className="size-[22px]" />}
-            title="客製化商品"
-            desc="相冊、馬克杯等 · LINE 一對一報價"
-            onClick={() => go({ kind: "custom" })}
+            icon={<IdCardIcon className="size-7" />}
+            title="證件照"
+            price={`一組 $${catalog.idPhotoSets[0].price}`}
+            onClick={() => go({ kind: "id_photo" })}
           />
-        </section>
+        )}
+        <ServiceLink
+          icon={<BookIcon className="size-7" />}
+          title="相冊、馬克杯"
+          price="專人報價"
+          onClick={() => go({ kind: "custom" })}
+        />
 
-        {hasContent ? (
+        {hasContent && (
           <button
             type="button"
             onClick={() => go({ kind: "checkout" })}
-            className="text-sm font-semibold text-brand underline-offset-4 hover:underline"
+            className="text-brand-dark min-h-12 text-xl font-bold underline underline-offset-4"
           >
             回到我的訂單（{fmt(total)}）
           </button>
-        ) : (
-          <ul className="grid grid-cols-3 gap-2 text-center">
-            <Fact title="只收 JPG" desc="手機照片直接傳" />
-            <Fact title="到店取件" desc="現金或轉帳都可以" />
-            <Fact title="保留 1 個月" desc="之後自動刪除" />
-          </ul>
         )}
       </div>
     );
@@ -386,64 +387,32 @@ export function OrderForm({
   // ---- 一組照片 ----
   if (screen === "group" && currentGroup) {
     const g = groups.find((x) => x.key === currentGroup.key)!;
+    const extra = freeExtraPrints(currentGroup);
     return (
       <div className="grid gap-4">
-        <ScreenTitle
-          title={`第 ${currentGroup.no} 組照片`}
-          step={1}
-          onBack={() => go(backFromItems)}
-        />
-        <Card className="grid gap-3">
-          <div className="flex items-end gap-3">
-            <label className="grid flex-1 gap-1">
-              <span className="text-xs text-muted">尺寸</span>
-              <select
-                value={g.printSizeId}
-                onChange={(e) =>
-                  void uploader.updateGroupOptions(g.key, {
-                    printSizeId: Number(e.target.value),
-                  })
-                }
-                className="h-11 rounded-[10px] border border-line bg-card px-3 text-base font-bold"
-              >
-                {catalog.sizes.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}　${s.price}／張
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="h-px bg-[#eeebe6]" />
-          <button
-            type="button"
-            role="switch"
-            aria-checked={g.laminate}
-            onClick={() =>
-              void uploader.updateGroupOptions(g.key, { laminate: !g.laminate })
-            }
-            className="flex min-h-11 w-full items-center gap-3 text-left"
-          >
-            <span className="flex-1">
-              <span className="block text-[15px] font-bold">護貝</span>
-              <span className="mt-0.5 block text-xs text-muted">
-                這組每張都護貝 · +$
-                {sizeById.get(g.printSizeId)?.laminationPrice ?? 0}／張
-              </span>
-            </span>
-            <span
-              className={`relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors ${
-                g.laminate ? "bg-brand" : "bg-[#d6d1cb]"
-              }`}
+        <StepHeader step={2} onBack={() => go(backFromItems)} />
+        <div className="flex items-center justify-between gap-3">
+          <h1 className={h1Class}>{currentGroup.sizeLabel} 照片</h1>
+          {/* The native picker sits invisibly on top of the text link */}
+          <label className="text-brand-dark relative flex min-h-12 items-center px-1 text-lg font-bold underline underline-offset-4">
+            換尺寸
+            <select
+              value={g.printSizeId}
+              onChange={(e) =>
+                void uploader.updateGroupOptions(g.key, {
+                  printSizeId: Number(e.target.value),
+                })
+              }
+              className="absolute inset-0 cursor-pointer text-base opacity-0"
             >
-              <span
-                className={`absolute top-[3px] size-6 rounded-full bg-white shadow transition-[left] ${
-                  g.laminate ? "left-[23px]" : "left-[3px]"
-                }`}
-              />
-            </span>
-          </button>
-        </Card>
+              {catalog.sizes.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}　${s.price}／張
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         <PhotoBucket
           bucket={g.key}
@@ -453,43 +422,65 @@ export function OrderForm({
           quantityUnit="張"
         />
 
+        <button
+          type="button"
+          role="switch"
+          aria-checked={g.laminate}
+          onClick={() =>
+            void uploader.updateGroupOptions(g.key, { laminate: !g.laminate })
+          }
+          className={`bg-card flex min-h-19 w-full items-center gap-3.5 rounded-[18px] border-2 px-4 text-left ${
+            g.laminate ? "border-brand" : "border-[#c9c2bb]"
+          }`}
+        >
+          <span
+            className={`grid size-9 shrink-0 place-items-center rounded-[10px] border-2 text-white ${
+              g.laminate ? "border-brand bg-brand" : "bg-card border-[#c9c2bb]"
+            }`}
+          >
+            {g.laminate && <CheckIcon className="size-6" />}
+          </span>
+          <span className="flex-1 text-2xl font-bold">要護貝</span>
+          <span className="text-brand-dark text-xl font-bold">
+            每張 +${sizeById.get(g.printSizeId)?.laminationPrice ?? 0}
+          </span>
+        </button>
+
         {currentGroup.total >
           (currentGroup.unitPrice + (currentGroup.laminationUnitPrice ?? 0)) *
             currentGroup.prints && (
-          <p className="rounded-xl bg-brand-tint px-3.5 py-3 text-[13px] leading-relaxed text-brand-dark">
-            這組還沒到低消，以 {fmt(currentGroup.total)} 計
-            {freeExtraPrints(currentGroup) > 0 &&
-              `，再多洗 ${freeExtraPrints(currentGroup)} 張也不用多付`}
-            。
+          <p className="bg-brand-tint text-brand-dark rounded-[14px] px-4 py-3 text-[17px] font-bold">
+            最少收 {fmt(currentGroup.total)}
+            {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
           </p>
         )}
 
-        <div className="grid gap-2">
+        <div className="grid gap-1">
           <button
             type="button"
             onClick={() => go({ kind: "pick" })}
-            className="flex h-13 items-center justify-center gap-2 rounded-2xl border-[1.5px] border-dashed border-[#c9c2bb] text-[15px] font-semibold"
+            className="bg-card flex min-h-15 items-center justify-center gap-2 rounded-[18px] border-2 border-[#c9c2bb] text-xl font-bold"
           >
-            <PlusIcon className="size-[18px]" />
-            再加一組（不同尺寸）
+            <PlusIcon className="size-6" />
+            再洗別的尺寸
           </button>
           {confirmDeleteGroup ? (
-            <p className="flex flex-wrap items-center justify-center gap-3 text-sm">
-              確定刪除這組和裡面的照片？
+            <p className="flex flex-wrap items-center justify-center gap-x-4 text-lg">
+              確定不洗這個尺寸？
               <button
                 type="button"
                 onClick={() => {
                   void uploader.removeGroup(g.key);
                   go(backFromItems);
                 }}
-                className="py-2 font-semibold text-red-700 underline"
+                className="min-h-12 font-bold text-red-700 underline underline-offset-4"
               >
-                刪除
+                確定
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDeleteGroup(false)}
-                className="py-2 underline"
+                className="min-h-12 underline underline-offset-4"
               >
                 取消
               </button>
@@ -498,22 +489,16 @@ export function OrderForm({
             <button
               type="button"
               onClick={() => setConfirmDeleteGroup(true)}
-              className="py-2 text-sm text-muted underline"
+              className="text-muted min-h-12 text-lg underline underline-offset-4"
             >
-              刪除這組
+              不洗這個尺寸了
             </button>
           )}
         </div>
 
         <BottomBar
-          caption={`${currentGroup.sizeLabel} · ${currentGroup.prints} 張${
-            g.laminate ? " · 含護貝" : ""
-          }`}
-          hint={
-            currentGroup.photos.length === 0
-              ? "先選照片才能下一步"
-              : undefined
-          }
+          caption={`共 ${currentGroup.prints} 張${g.laminate ? "，含護貝" : ""}`}
+          hint={currentGroup.photos.length === 0 ? "先加照片" : undefined}
           amount={currentGroup.total}
         >
           <PrimaryButton
@@ -521,7 +506,7 @@ export function OrderForm({
             disabled={currentGroup.photos.length === 0}
           >
             下一步
-            <ArrowRightIcon className="size-[18px]" />
+            <ArrowRightIcon className="size-6.5" />
           </PrimaryButton>
         </BottomBar>
       </div>
@@ -530,43 +515,42 @@ export function OrderForm({
 
   // ---- 證件照 ----
   if (screen === "id_photo") {
+    const sets = idPhotoLines.reduce((n, l) => n + l.sets, 0);
     return (
       <div className="grid gap-4">
-        <ScreenTitle title="證件照" step={1} onBack={() => go(backFromItems)} />
-        <Card className="grid gap-2 text-sm">
-          <p className="text-muted">
-            每組 {fmt(catalog.idPhotoSets[0]?.price ?? 0)}
-            。每張照片選一種組合；同一張照片要多印幾組，就調整組數。
+        <StepHeader step={2} onBack={() => go(backFromItems)} />
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className={h1Class}>證件照</h1>
+          <p className="text-brand-dark text-xl font-bold">
+            一組 ${catalog.idPhotoSets[0]?.price ?? 0}
           </p>
-          <details>
-            <summary className="cursor-pointer py-1 font-semibold">
-              證件照尺寸與常見用途
-            </summary>
-            <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3">
-              {ID_PHOTO_SIZES.map(([size, uses]) => (
-                <div key={size} className="contents">
-                  <dt className="border-t border-line py-1.5 font-medium whitespace-nowrap">
-                    {size}
-                  </dt>
-                  <dd className="border-t border-line py-1.5 text-muted">
-                    {uses}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        </Card>
+        </div>
+
+        <h2 className={h2Class}>要哪一種？</h2>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {catalog.idPhotoSets.map((set) => (
+            <ChoiceCard
+              key={set.id}
+              name="idPhotoSet"
+              checked={set.id === idSetId}
+              onSelect={() => pickIdSet(set.id)}
+              title={set.name.replace(/^證件照：/, "")}
+              desc={set.description?.split("、").slice(0, 2).join("、")}
+            />
+          ))}
+        </div>
+
+        <h2 className={`${h2Class} mt-2`}>照片和組數</h2>
         <PhotoBucket
           bucket={ID_PHOTO_BUCKET}
           entries={idPhotoEntries}
           notices={notices.filter((n) => n.bucket === ID_PHOTO_BUCKET)}
           uploader={uploader}
           quantityUnit="組"
-          idPhotoSets={catalog.idPhotoSets}
         />
         <BottomBar
-          caption={`證件照 · ${idPhotoLines.reduce((n, l) => n + l.sets, 0)} 組`}
-          hint={idPhotoEntries.length === 0 ? "先選照片才能下一步" : undefined}
+          caption={`共 ${sets} 組`}
+          hint={idPhotoEntries.length === 0 ? "先加照片" : undefined}
           amount={idPhotoLines.reduce((s, l) => s + l.subtotal, 0)}
         >
           <PrimaryButton
@@ -574,7 +558,7 @@ export function OrderForm({
             disabled={idPhotoEntries.length === 0}
           >
             下一步
-            <ArrowRightIcon className="size-[18px]" />
+            <ArrowRightIcon className="size-6.5" />
           </PrimaryButton>
         </BottomBar>
       </div>
@@ -583,45 +567,40 @@ export function OrderForm({
 
   // ---- 客製化 ----
   if (screen === "custom") {
+    const empty = customEntries.length === 0 && !customNote.trim();
     return (
       <div className="grid gap-4">
-        <ScreenTitle title="客製化商品" step={1} onBack={() => go(backFromItems)} />
-        <p className="text-sm leading-relaxed text-muted">
-          相冊、馬克杯等客製化商品，請上傳要用的照片並說明需求，店家會再透過
-          LINE 與你一對一確認張數、細節和報價（不含在訂單總金額）。
-        </p>
+        <StepHeader step={2} onBack={() => go(backFromItems)} />
+        <h1 className={h1Class}>相冊、馬克杯</h1>
+        <p className="text-xl text-[#4a423c]">送出後，店家會跟您聯絡報價。</p>
         <PhotoBucket
           bucket={CUSTOM_BUCKET}
           entries={customEntries}
           notices={notices.filter((n) => n.bucket === CUSTOM_BUCKET)}
           uploader={uploader}
         />
-        <label className="grid gap-1.5 text-[13px] font-semibold">
-          需求說明
+        <label className="mt-1 grid gap-2 text-[22px] font-bold">
+          想做什麼？
           <textarea
             value={customNote}
             onChange={(e) => setCustomNote(e.target.value)}
             maxLength={2000}
             rows={4}
-            placeholder="例如：想做一本 20 頁的相本，封面用第一張照片"
-            className={inputClass}
+            placeholder="例如：想做一本 20 頁的相本"
+            className={textareaClass}
           />
         </label>
         <BottomBar
-          caption="客製化"
-          hint={
-            customEntries.length === 0 && !customNote.trim()
-              ? "先選照片或填寫需求說明"
-              : undefined
-          }
-          amountText="另行報價"
+          caption="價錢"
+          hint={empty ? "先加照片或寫想做什麼" : undefined}
+          amountText="另外報價"
         >
           <PrimaryButton
             onClick={() => go({ kind: "checkout" })}
-            disabled={customEntries.length === 0 && !customNote.trim()}
+            disabled={empty}
           >
             下一步
-            <ArrowRightIcon className="size-[18px]" />
+            <ArrowRightIcon className="size-6.5" />
           </PrimaryButton>
         </BottomBar>
       </div>
@@ -637,23 +616,22 @@ export function OrderForm({
   const errorCount = FIELD_ORDER.filter((k) => errors[k]).length;
   const firstError = FIELD_ORDER.map((k) => errors[k]).find(Boolean);
   return (
-    <div className="grid gap-4">
-      <ScreenTitle title="確認訂單" step={2} onBack={() => go({ kind: "pick" })} />
+    <div className="grid gap-5">
+      <StepHeader step={3} onBack={() => go({ kind: "pick" })} />
+      <h1 className={h1Class}>填資料，送出</h1>
 
-      <Card
+      <section
         id={fieldId("content")}
         tabIndex={-1}
-        invalid={!!errors.content}
-        className="overflow-hidden p-0 outline-none"
+        className={`bg-card overflow-hidden rounded-[18px] border-2 outline-none ${
+          errors.content ? "border-red-600" : "border-line"
+        }`}
       >
-        <h2 className="px-4 pt-3.5 pb-1.5 text-[15px] font-bold">訂單內容</h2>
         {!hasContent && (
-          <p className="px-4 py-3 text-sm text-muted">
-            還沒有加入任何照片，從下面選一項開始。
-          </p>
+          <p className="text-muted px-4 pt-4 text-lg">還沒有加照片。</p>
         )}
         {errors.content && hasContent && (
-          <p className="mx-4 mb-1 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-800">
+          <p className="mx-4 mt-4 rounded-xl bg-red-50 px-3.5 py-2.5 text-lg text-red-800">
             {errors.content}
           </p>
         )}
@@ -664,14 +642,15 @@ export function OrderForm({
               <SummaryRow
                 key={g.key}
                 photos={g.photos}
-                title={`${g.sizeLabel} · ${g.prints} 張`}
-                desc={`${g.photos.length} 張照片${
-                  g.laminationUnitPrice !== null ? " · 含護貝" : ""
-                }${
-                  g.total > (g.unitPrice + (g.laminationUnitPrice ?? 0)) * g.prints
-                    ? ` · 未滿低消以 $${g.total} 計`
-                    : ""
-                }`}
+                title={`${g.sizeLabel} 照片 ${g.prints} 張`}
+                desc={[
+                  g.laminationUnitPrice !== null && "含護貝",
+                  g.total >
+                    (g.unitPrice + (g.laminationUnitPrice ?? 0)) * g.prints &&
+                    `最少收 $${g.total}`,
+                ]
+                  .filter(Boolean)
+                  .join("，")}
                 amount={`$${g.total}`}
                 issue={uploadIssue(g.photos)}
                 onClick={() => go({ kind: "group", key: g.key })}
@@ -681,8 +660,8 @@ export function OrderForm({
             <SummaryRow
               key={l.id}
               photos={idPhotoEntries.filter((e) => e.productId === l.id)}
-              title={l.name}
-              desc={`${l.sets} 組 × $${l.price}`}
+              title={`證件照 ${l.sets} 組`}
+              desc={l.name.replace(/^證件照：/, "")}
               amount={`$${l.subtotal}`}
               issue={uploadIssue(
                 idPhotoEntries.filter((e) => e.productId === l.id),
@@ -693,66 +672,54 @@ export function OrderForm({
           {(customEntries.length > 0 || customNote) && (
             <SummaryRow
               photos={customEntries}
-              title="客製化商品"
-              desc={`${customEntries.length} 張照片`}
-              amount="另行報價"
+              title="相冊、馬克杯"
+              desc={
+                customEntries.length
+                  ? `${customEntries.length} 張照片`
+                  : undefined
+              }
+              amount="另外報價"
               issue={uploadIssue(customEntries)}
               onClick={() => go({ kind: "custom" })}
             />
           )}
         </ul>
         {catalog.addons.length > 0 && (
-          <ul className="grid gap-2 border-t border-[#eeebe6] px-4 py-3">
+          <ul className="grid gap-3 border-t border-[#eeebe6] px-4 py-4">
             {catalog.addons.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3">
-                <div className="min-w-0 text-sm">
-                  <p className="font-semibold">
-                    {p.name} <span className="text-muted">${p.price}</span>
+              <li
+                key={p.id}
+                className="flex flex-wrap items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-xl font-bold">
+                    {p.name} <span className="text-brand-dark">${p.price}</span>
                   </p>
                   {p.description && (
-                    <p className="text-xs text-muted">{p.description}</p>
+                    <p className="text-muted text-base">{p.description}</p>
                   )}
                 </div>
-                <div className="w-28 shrink-0">
-                  <Stepper
-                    value={itemQty[p.id] ?? 0}
-                    min={0}
-                    onChange={(q) => setItemQty((m) => ({ ...m, [p.id]: q }))}
-                    label={`${p.name} 數量`}
-                    unit="個"
-                  />
-                </div>
+                <Stepper
+                  value={itemQty[p.id] ?? 0}
+                  min={0}
+                  onChange={(q) => setItemQty((m) => ({ ...m, [p.id]: q }))}
+                  label={`${p.name} 數量`}
+                  unit="個"
+                />
               </li>
             ))}
           </ul>
         )}
         <div className="flex flex-wrap gap-2 px-4 pt-3 pb-4">
-          <Chip onClick={() => go({ kind: "pick" })}>＋ 沖印照片</Chip>
+          <Chip onClick={() => go({ kind: "pick" })}>＋ 再洗別的尺寸</Chip>
           {catalog.idPhotoSets.length > 0 && (
             <Chip onClick={() => go({ kind: "id_photo" })}>＋ 證件照</Chip>
           )}
-          <Chip onClick={() => go({ kind: "custom" })}>＋ 客製化</Chip>
+          <Chip onClick={() => go({ kind: "custom" })}>＋ 相冊、馬克杯</Chip>
         </div>
-      </Card>
+      </section>
 
-      <Card className="grid gap-3.5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-bold">聯絡資料</h2>
-          <span className="text-xs text-muted">取件時核對用</span>
-        </div>
-        {!member && (
-          <Link
-            href="/login?next=/order"
-            className="flex min-h-11 items-center gap-2.5 rounded-xl bg-[#eaf8ef] px-3 py-2.5 text-[13px] leading-snug text-[#14532d]"
-          >
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#06c755] text-[10px] font-extrabold text-white">
-              LINE
-            </span>
-            <span>
-              <strong>用 LINE 登入</strong> 之後可以查歷史訂單（目前以訪客身分下單）
-            </span>
-          </Link>
-        )}
+      <section className="grid gap-4">
         <Field label="姓名" error={errors.name}>
           <input
             id={fieldId("name")}
@@ -763,6 +730,7 @@ export function OrderForm({
             }}
             maxLength={50}
             autoComplete="name"
+            placeholder="例如：王小明"
             aria-invalid={!!errors.name}
             className={inputClass}
           />
@@ -791,77 +759,108 @@ export function OrderForm({
             className={inputClass}
           />
         </Field>
+        <Field
+          label="Email"
+          optional={!!member}
+          error={errors.email}
+          help="訂單通知會寄到這裡"
+        >
+          <input
+            id={fieldId("email")}
+            value={contactEmail}
+            onChange={(e) => {
+              setContactEmail(e.target.value);
+              clearFieldError("email");
+            }}
+            onBlur={() => {
+              const r = emailSchema.safeParse(contactEmail);
+              if (contactEmail.trim() && !r.success)
+                setFieldErrors((m) => ({
+                  ...m,
+                  email: r.error.issues[0].message,
+                }));
+            }}
+            aria-invalid={!!errors.email}
+            type="email"
+            inputMode="email"
+            maxLength={254}
+            placeholder="name@example.com"
+            autoComplete="email"
+            className={inputClass}
+          />
+        </Field>
         <Field label="備註" optional>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             maxLength={1000}
-            rows={3}
-            placeholder="例如：希望星期五下午取件"
-            className={inputClass}
+            rows={2}
+            placeholder="例如：星期五下午來拿"
+            className={textareaClass}
           />
         </Field>
-      </Card>
-
-      <Card className="grid gap-2.5">
-        <h2 className="mb-0.5 text-[15px] font-bold">付款方式</h2>
-        {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
-          <label
-            key={m}
-            className={`flex min-h-15 cursor-pointer items-center gap-3 rounded-xl border p-3.5 ${
-              paymentMethod === m
-                ? "border-brand bg-brand-tint ring-1 ring-brand"
-                : "border-line bg-background"
-            }`}
+        {!member && (
+          <Link
+            href="/login?next=/order"
+            className="flex min-h-14 items-center gap-3 rounded-[14px] bg-[#eaf8ef] px-4 py-2.5 text-[17px] leading-snug text-[#14532d]"
           >
-            <input
-              type="radio"
-              name="paymentMethod"
-              value={m}
-              checked={paymentMethod === m}
-              onChange={() => {
-                setPaymentMethod(m);
-                clearFieldError("payment");
-              }}
-              className="size-5 accent-brand"
-            />
-            <span>
-              <span className="block text-[15px] font-bold">
-                {PAYMENT_LABEL[m]}
-              </span>
-              <span className="mt-0.5 block text-xs text-muted">
-                {PAYMENT_HINT[m]}
-              </span>
+            <span className="bg-line-green grid size-9 shrink-0 place-items-center rounded-lg text-[11px] font-extrabold text-white">
+              LINE
             </span>
-          </label>
+            <span>
+              <strong>用 LINE 登入</strong>，以後可以查以前的訂單
+            </span>
+          </Link>
+        )}
+      </section>
+
+      <section className="grid gap-2.5">
+        <h2 className={h2Class}>怎麼付錢？</h2>
+        {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
+          <ChoiceCard
+            key={m}
+            name="paymentMethod"
+            checked={paymentMethod === m}
+            onSelect={() => {
+              setPaymentMethod(m);
+              clearFieldError("payment");
+            }}
+            title={PAYMENT_LABEL[m]}
+          />
         ))}
         {paymentMethod !== "cash_on_pickup" && (
-          <div className="grid gap-3 rounded-xl bg-subtle p-4 text-sm">
+          <div className="bg-subtle grid gap-4 rounded-[14px] p-4 text-xl">
             <PaymentDetails method={paymentMethod} />
             {paymentMethod === "bank_transfer" && (
               <>
-                <p className="text-muted">
-                  轉帳後請填寫帳號末五碼，或上傳轉帳截圖（擇一即可）。
-                </p>
+                <div className="h-px bg-[#d9d4cd]" />
+                <p className="font-bold">轉帳後，下面選一種做就好</p>
                 {errors.payment && (
-                  <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-800">
+                  <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-lg text-red-800">
                     {errors.payment}
                   </p>
                 )}
-                <Field label="轉出帳號末五碼">
+                <Field label="填您帳號的末五碼" small>
                   <input
                     id={fieldId("payment")}
                     value={bankLast5}
                     onChange={(e) => {
-                      setBankLast5(e.target.value.replace(/\D/g, "").slice(0, 5));
+                      setBankLast5(
+                        e.target.value.replace(/\D/g, "").slice(0, 5),
+                      );
                       clearFieldError("payment");
                     }}
                     aria-invalid={!!errors.payment}
                     inputMode="numeric"
                     placeholder="12345"
-                    className={`${inputClass} w-36 font-mono`}
+                    className={`${inputClass} text-[26px] font-bold tracking-[0.2em]`}
                   />
                 </Field>
+                <p className="text-muted flex items-center gap-3 text-lg font-bold">
+                  <span className="h-px flex-1 bg-[#d9d4cd]" />
+                  或是
+                  <span className="h-px flex-1 bg-[#d9d4cd]" />
+                </p>
                 <ProofPicker
                   proof={proof}
                   onPick={(f) => {
@@ -877,20 +876,20 @@ export function OrderForm({
             )}
           </div>
         )}
-      </Card>
+      </section>
 
-      <p className="text-center text-xs leading-relaxed text-muted">
-        照片保留 1 個月後自動刪除 · 客製化商品報價另計
+      <p className="text-muted text-center text-base">
+        照片保留 1 個月後自動刪除
       </p>
 
       <BottomBar
-        caption={`總計 · ${PAYMENT_LABEL[paymentMethod]}`}
-        hint={!hasContent ? "先加入照片才能送出" : undefined}
+        caption="總計"
+        hint={!hasContent ? "先加照片" : undefined}
         amount={total}
         alert={
           error ??
           (errorCount > 1
-            ? `有 ${errorCount} 個地方需要修正，已用紅字標示`
+            ? `有 ${errorCount} 個地方要修改，已用紅字標出`
             : firstError)
         }
         onAlertClick={error ? undefined : () => revealFirstError(errors)}
@@ -902,7 +901,7 @@ export function OrderForm({
           {submitting
             ? "送出中…"
             : busy
-              ? `照片上傳中 ${uploaded}/${entries.length}`
+              ? `上傳中 ${uploaded}/${entries.length}`
               : "送出訂單"}
         </PrimaryButton>
       </BottomBar>
@@ -910,8 +909,12 @@ export function OrderForm({
   );
 }
 
-const inputClass =
-  "rounded-xl border border-[#d6d1cb] bg-card px-3.5 py-3 text-base focus:outline-2 focus:outline-offset-1 focus:outline-brand aria-invalid:border-red-600 aria-invalid:focus:outline-red-600";
+const h1Class = "text-[32px] leading-tight font-black";
+const h2Class = "text-[22px] font-bold";
+const inputBase =
+  "w-full rounded-[14px] border-2 border-[#a59c94] bg-card px-4 font-medium placeholder:text-[#8a827c] focus:outline-2 focus:outline-offset-1 focus:outline-brand aria-invalid:border-red-600 aria-invalid:focus:outline-red-600";
+const inputClass = `${inputBase} h-16 text-2xl`;
+const textareaClass = `${inputBase} py-3.5 text-[22px] leading-normal`;
 
 /** How many more prints this group can add before its total goes up (低消). */
 function freeExtraPrints(g: {
@@ -956,58 +959,60 @@ function ProofPicker({
       }}
     />
   );
+  if (!hasFile)
+    return (
+      <div className="grid gap-2">
+        <label className="border-brand bg-card text-brand-dark flex min-h-17 cursor-pointer items-center justify-center gap-2.5 rounded-[14px] border-2 text-[22px] font-bold">
+          <ImageIcon className="size-6.5" />
+          {proof.status === "failed" ? "重新選截圖" : "傳轉帳截圖"}
+          {picker}
+        </label>
+        {proof.status === "failed" && (
+          <span className="text-lg text-red-700">{proof.error}</span>
+        )}
+      </div>
+    );
   return (
-    <div className="grid gap-2">
-      <span className="text-[13px] font-semibold">轉帳截圖</span>
-      {hasFile ? (
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-card p-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={proof.previewUrl}
-            alt="轉帳截圖預覽"
-            className="size-16 shrink-0 rounded-lg border border-line object-cover"
-          />
-          <div className="grid min-w-0 flex-1 gap-1.5">
-            {proof.status === "uploading" ? (
-              <>
-                <span className="text-[13px] font-semibold">
-                  上傳中 {Math.round(proof.progress * 100)}%
-                </span>
-                <span className="h-1.5 overflow-hidden rounded-full bg-line">
-                  <span
-                    className="block h-full rounded-full bg-brand transition-[width]"
-                    style={{ width: `${proof.progress * 100}%` }}
-                  />
-                </span>
-              </>
-            ) : (
-              <span className="text-[13px] font-semibold text-green-800">
-                ✓ 截圖已上傳
-              </span>
-            )}
-            <span className="flex gap-3 text-xs">
-              <label className="cursor-pointer py-1 underline">
-                換一張
-                {picker}
-              </label>
-              <button type="button" onClick={onRemove} className="py-1 underline">
-                移除
-              </button>
+    <div className="border-line bg-card flex items-center gap-3.5 rounded-[14px] border-2 p-3">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={proof.previewUrl}
+        alt="轉帳截圖預覽"
+        className="border-line size-20 shrink-0 rounded-xl border object-cover"
+      />
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        {proof.status === "uploading" ? (
+          <>
+            <span className="text-lg font-bold">
+              上傳中 {Math.round(proof.progress * 100)}%
             </span>
-          </div>
-        </div>
-      ) : (
-        <>
-          <label className="flex h-11 w-fit cursor-pointer items-center gap-2 rounded-xl border border-line bg-card px-4 font-semibold hover:border-brand">
-            <PlusIcon className="size-[18px]" />
-            {proof.status === "failed" ? "重新選擇截圖" : "選擇截圖"}
+            <span className="bg-line h-2 overflow-hidden rounded-full">
+              <span
+                className="bg-brand block h-full rounded-full transition-[width]"
+                style={{ width: `${proof.progress * 100}%` }}
+              />
+            </span>
+          </>
+        ) : (
+          <span className="flex items-center gap-1.5 text-lg font-bold text-green-800">
+            <CheckIcon className="size-5.5" />
+            截圖傳好了
+          </span>
+        )}
+        <span className="flex gap-5 text-lg">
+          <label className="flex min-h-11 cursor-pointer items-center underline underline-offset-4">
+            換一張
             {picker}
           </label>
-          {proof.status === "failed" && (
-            <span className="text-[13px] text-red-700">{proof.error}</span>
-          )}
-        </>
-      )}
+          <button
+            type="button"
+            onClick={onRemove}
+            className="min-h-11 underline underline-offset-4"
+          >
+            拿掉
+          </button>
+        </span>
+      </div>
     </div>
   );
 }
@@ -1017,60 +1022,48 @@ function uploadIssue(photos: Entry[]) {
   const bad = photos.filter(
     (p) => p.status === "failed" || p.status === "missing",
   ).length;
-  return bad ? `${bad} 張上傳失敗，點進去重傳或移除` : undefined;
+  return bad ? `${bad} 張沒傳成功，點這裡處理` : undefined;
 }
 
-function Card({
-  className = "",
-  invalid,
-  children,
-  ...rest
-}: React.ComponentProps<"section"> & { invalid?: boolean }) {
-  return (
-    <section
-      {...rest}
-      className={`rounded-2xl border bg-card p-4 ${
-        invalid ? "border-red-600 ring-1 ring-red-600" : "border-line"
-      } ${className}`}
-    >
-      {children}
-    </section>
-  );
-}
-
-function ScreenTitle({
-  title,
+/** Back button, "step N of 3" and a progress bar on top of each order screen. */
+function StepHeader({
   step,
   onBack,
 }: {
-  title: string;
-  step: 1 | 2;
-  onBack: () => void;
+  step: 1 | 2 | 3;
+  /** Omit to link back to the home page. */
+  onBack?: () => void;
 }) {
+  const backClass = "-ml-3 grid size-12 place-items-center";
   return (
-    <div className="-mx-2 flex items-center gap-1">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="返回"
-        className="grid size-11 place-items-center"
-      >
-        <ChevronLeftIcon className="size-[22px]" />
-      </button>
-      <h1 className="flex-1 text-lg font-bold">{title}</h1>
-      <span
-        className="flex items-center gap-1 pr-2"
-        aria-label={`步驟 ${step}／3`}
-      >
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="返回"
+            className={backClass}
+          >
+            <ChevronLeftIcon className="size-7" />
+          </button>
+        ) : (
+          <Link href="/" aria-label="回首頁" className={backClass}>
+            <ChevronLeftIcon className="size-7" />
+          </Link>
+        )}
+        <p className="text-brand-dark text-lg font-bold">
+          第 {step} 步／共 3 步
+        </p>
+      </div>
+      <div aria-hidden="true" className="flex gap-1.5">
         {[1, 2, 3].map((n) => (
           <span
             key={n}
-            className={`h-1.5 rounded-full ${n === step ? "w-[22px]" : "w-1.5"} ${
-              n <= step ? "bg-brand" : "bg-line"
-            }`}
+            className={`h-2 flex-1 rounded-full ${n <= step ? "bg-brand" : "bg-line"}`}
           />
         ))}
-      </span>
+      </div>
     </div>
   );
 }
@@ -1078,38 +1071,63 @@ function ScreenTitle({
 function ServiceLink({
   icon,
   title,
-  desc,
+  price,
   onClick,
 }: {
   icon: React.ReactNode;
   title: string;
-  desc: string;
+  price: string;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-3.5 rounded-2xl border border-line bg-card p-4 text-left hover:border-brand"
+      className="border-line bg-card hover:border-brand flex min-h-21 items-center gap-3.5 rounded-[18px] border-2 px-4 text-left"
     >
-      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand-dark">
+      <span className="bg-brand-soft text-brand-dark grid size-13 shrink-0 place-items-center rounded-[14px]">
         {icon}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[15px] font-bold">{title}</span>
-        <span className="mt-0.5 block text-[13px] text-muted">{desc}</span>
+      <span className="min-w-0 flex-1 text-2xl font-bold">{title}</span>
+      <span className="text-brand-dark text-xl font-bold whitespace-nowrap">
+        {price}
       </span>
-      <ChevronRightIcon className="size-[18px] text-muted" />
     </button>
   );
 }
 
-function Fact({ title, desc }: { title: string; desc: string }) {
+/** One big option of a single-choice list (payment method, ID-photo set). */
+function ChoiceCard({
+  name,
+  checked,
+  onSelect,
+  title,
+  desc,
+}: {
+  name: string;
+  checked: boolean;
+  onSelect: () => void;
+  title: string;
+  desc?: string;
+}) {
   return (
-    <li className="rounded-xl bg-subtle px-1.5 py-3">
-      <p className="text-[13px] font-bold">{title}</p>
-      <p className="mt-0.5 text-[11px] text-muted">{desc}</p>
-    </li>
+    <label
+      className={`flex min-h-19 cursor-pointer items-center gap-3.5 rounded-[18px] border-2 px-4 py-2 ${
+        checked ? "border-brand bg-brand-tint" : "border-line bg-card"
+      }`}
+    >
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        onChange={onSelect}
+        className="accent-brand size-7 shrink-0"
+      />
+      <span className="min-w-0">
+        <span className="block text-2xl leading-snug font-bold">{title}</span>
+        {desc && <span className="text-muted block text-lg">{desc}</span>}
+      </span>
+    </label>
   );
 }
 
@@ -1123,7 +1141,7 @@ function SummaryRow({
 }: {
   photos: Entry[];
   title: string;
-  desc: string;
+  desc?: string;
   amount: string;
   issue?: string;
   onClick: () => void;
@@ -1134,9 +1152,9 @@ function SummaryRow({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-full items-center gap-3 py-3 text-left"
+        className="flex w-full items-center gap-3 py-3.5 text-left"
       >
-        <span className="grid size-12 shrink-0 grid-cols-2 gap-0.5 overflow-hidden rounded-lg bg-subtle">
+        <span className="bg-subtle grid size-14 shrink-0 grid-cols-2 gap-0.5 overflow-hidden rounded-xl">
           {thumbs.map((p) => (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -1150,16 +1168,20 @@ function SummaryRow({
           ))}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-bold">{title}</span>
-          <span className="mt-0.5 block text-xs text-muted">{desc}</span>
+          <span className="block text-xl leading-snug font-bold">{title}</span>
+          {desc && <span className="text-muted block text-base">{desc}</span>}
           {issue && (
-            <span className="mt-0.5 block text-xs font-semibold text-red-700">
+            <span className="block text-base font-bold text-red-700">
               {issue}
             </span>
           )}
+          <span className="text-brand-dark text-lg font-bold underline underline-offset-4">
+            修改
+          </span>
         </span>
-        <span className="text-[15px] font-bold">{amount}</span>
-        <ChevronRightIcon className="size-4 text-muted" />
+        <span className="text-[26px] font-extrabold whitespace-nowrap">
+          {amount}
+        </span>
       </button>
     </li>
   );
@@ -1176,7 +1198,7 @@ function Chip({
     <button
       type="button"
       onClick={onClick}
-      className="h-10 rounded-full border border-line bg-background px-3.5 text-[13px] font-semibold hover:border-brand"
+      className="border-line bg-background hover:border-brand min-h-12 rounded-full border-2 px-4 text-lg font-bold"
     >
       {children}
     </button>
@@ -1206,7 +1228,7 @@ function BottomBar({
   const typing = useTouchTyping();
   return (
     <div
-      className={`fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card/95 backdrop-blur ${
+      className={`border-line bg-card fixed inset-x-0 bottom-0 z-10 border-t ${
         typing ? "hidden" : ""
       }`}
     >
@@ -1216,14 +1238,14 @@ function BottomBar({
             type="button"
             onClick={onAlertClick}
             disabled={!onAlertClick}
-            className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-2.5 text-left text-sm font-semibold text-red-800"
+            className="mx-auto flex min-h-12 w-full max-w-3xl items-center gap-2.5 px-4 py-2 text-left text-lg font-bold text-red-800"
           >
-            <span className="grid size-5 shrink-0 place-items-center rounded-full bg-red-700 text-xs font-bold text-white">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-red-700 text-sm font-bold text-white">
               !
             </span>
             <span className="flex-1">{alert}</span>
             {onAlertClick && (
-              <span className="shrink-0 text-xs underline">前往</span>
+              <span className="shrink-0 text-base underline">去修改</span>
             )}
           </button>
         </div>
@@ -1231,13 +1253,14 @@ function BottomBar({
       <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="min-w-0 flex-1">
           {hint ? (
-            <p className="truncate text-xs font-semibold text-brand-dark">
-              {hint}
-            </p>
+            <p className="text-brand-dark truncate text-lg font-bold">{hint}</p>
           ) : (
-            <p className="truncate text-xs text-muted">{caption}</p>
+            <p className="text-muted truncate text-lg font-bold">{caption}</p>
           )}
-          <p className="text-[22px] font-extrabold" aria-live="polite">
+          <p
+            className="text-[32px] leading-tight font-extrabold whitespace-nowrap"
+            aria-live="polite"
+          >
             {amountText ?? fmt(amount ?? 0)}
           </p>
         </div>
@@ -1287,7 +1310,7 @@ function PrimaryButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex h-13 items-center justify-center gap-1.5 rounded-2xl bg-brand px-5 text-base font-bold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:bg-[#c9c2bb] disabled:hover:bg-[#c9c2bb]"
+      className="bg-brand hover:bg-brand-dark flex min-h-17 min-w-40 shrink-0 items-center justify-center gap-2 rounded-[18px] px-5 text-2xl font-bold whitespace-nowrap text-white disabled:cursor-not-allowed disabled:bg-[#8a827c] disabled:hover:bg-[#8a827c]"
     >
       {children}
     </button>
@@ -1297,22 +1320,36 @@ function PrimaryButton({
 function Field({
   label,
   optional,
+  small,
+  help,
   error,
   children,
 }: {
   label: string;
   optional?: boolean;
+  /** Slightly smaller label, for a field nested inside another block. */
+  small?: boolean;
+  help?: string;
   error?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label className="grid gap-1.5 text-[13px] font-semibold">
+    <label
+      className={`grid gap-2 font-bold ${small ? "text-xl" : "text-[22px]"}`}
+    >
       <span>
         {label}
-        {optional && <span className="font-normal text-muted">（選填）</span>}
+        {optional && (
+          <span className="text-muted text-lg font-medium">（可以不填）</span>
+        )}
       </span>
       {children}
-      {error && <span className="font-normal text-red-700">{error}</span>}
+      {help && !error && (
+        <span className="text-muted text-base font-normal">{help}</span>
+      )}
+      {error && (
+        <span className="text-lg font-normal text-red-700">{error}</span>
+      )}
     </label>
   );
 }

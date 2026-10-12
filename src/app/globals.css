@@ -17,6 +17,8 @@
   --color-brand-dark: #8f3d0b;
   --color-brand-tint: #fdf3ec;
   --color-brand-soft: #f6e8de;
+  /* Darker than LINE's own green so white text stays readable */
+  --color-line-green: #05853a;
   --font-sans: var(--font-jakarta), var(--font-noto-sans-tc), sans-serif;
 
   /* Admin (cool grey, see the admin design canvas) */

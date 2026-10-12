@@ -4,8 +4,10 @@ import { randomUUID } from "node:crypto";
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import type { z } from "zod";
 import { db } from "@/lib/db";
+import { sendOrderEmail } from "@/lib/email";
 import {
   cookieOptions,
   DRAFT_COOKIE,
@@ -330,6 +332,9 @@ export async function submitOrder(input: unknown): Promise<Result> {
   const owner = await getOwner();
   const { data, error } = parse(submitOrderInput, input);
   if (!data) return { ok: false, error };
+  // Members sign in with LINE; guests have no other way to be reached by email
+  if (owner.kind === "guest" && !data.contactEmail)
+    return { ok: false, error: "請填寫 Email" };
 
   const orderId = await ensureDraftId(owner);
 
@@ -492,6 +497,7 @@ export async function submitOrder(input: unknown): Promise<Result> {
           draftToken: null,
           contactName: data.contactName,
           contactPhone: data.contactPhone,
+          contactEmail: data.contactEmail ?? null,
           note: data.note || null,
           customNote: data.customNote || null,
           paymentMethod: data.paymentMethod,
@@ -524,5 +530,6 @@ export async function submitOrder(input: unknown): Promise<Result> {
     ...cookieOptions,
     maxAge: 60 * 60 * 24 * 7,
   });
+  after(() => sendOrderEmail(orderId, "submitted"));
   redirect(`/order/complete?id=${orderId}`);
 }

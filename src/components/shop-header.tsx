@@ -1,22 +1,29 @@
 import Link from "next/link";
 import { CameraIcon } from "@/components/icons";
+import { SHOP } from "@/lib/shop-info";
 
 /** Brand bar on top of the shop pages; `children` goes on the right. */
-export function ShopHeader({ children }: { children?: React.ReactNode }) {
+export function ShopHeader({
+  wide,
+  children,
+}: {
+  /** Match the home page's wider column. */
+  wide?: boolean;
+  children?: React.ReactNode;
+}) {
   return (
-    <header className="border-b border-line bg-card/70 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+    <header className="border-line bg-card border-b">
+      <div
+        className={`mx-auto flex items-center gap-3 px-4 py-3 ${
+          wide ? "max-w-6xl sm:px-6" : "max-w-3xl"
+        }`}
+      >
         <Link href="/" className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-brand text-white">
-            <CameraIcon />
+          <span className="bg-brand grid size-11 shrink-0 place-items-center rounded-xl text-white">
+            <CameraIcon className="size-6" />
           </span>
-          <span className="min-w-0">
-            <span className="block truncate text-[17px] leading-tight font-bold">
-              十二街寫真攝影館
-            </span>
-            <span className="block text-xs text-muted">
-              線上洗照片 · 上傳就搞定
-            </span>
+          <span className="truncate text-[19px] leading-tight font-bold">
+            {SHOP.name}
           </span>
         </Link>
         {children}
