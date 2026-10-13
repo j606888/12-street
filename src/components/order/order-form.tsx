@@ -11,7 +11,6 @@ import {
   ChevronRightIcon,
   IdCardIcon,
   ImageIcon,
-  PlusIcon,
 } from "@/components/icons";
 import {
   PAYMENT_LABEL,
@@ -30,7 +29,7 @@ import {
   MAX_PROOF_BYTES,
   phoneSchema,
 } from "@/lib/validators/order";
-import { PhotoBucket, type PhotoBucketHandle, Stepper } from "./photo-bucket";
+import { PhotoBucket, Stepper } from "./photo-bucket";
 import { putFile } from "./upload-utils";
 import {
   CUSTOM_BUCKET,
@@ -102,9 +101,8 @@ export function OrderForm({
   const uploader = usePhotoUploader(draft, catalog.sizes[0]?.id ?? 0, idSetId);
   const { groups, entries, notices } = uploader;
 
-  const [view, setView] = useState<View>(() =>
-    uploader.entries.length ? { kind: "checkout" } : { kind: "pick" },
-  );
+  // The size list doubles as the overview, so a resumed draft starts there too
+  const [view, setView] = useState<View>({ kind: "pick" });
   const [itemQty, setItemQty] = useState<Record<number, number>>({});
   const [customNote, setCustomNote] = useState("");
   const [contactName, setContactName] = useState(member?.name ?? "");
@@ -120,14 +118,9 @@ export function OrderForm({
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, startSubmit] = useTransition();
-  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
-  // The photo list on screen; its file picker is opened from the bottom bar
-  const bucketRef = useRef<PhotoBucketHandle>(null);
-  const addPhotos = () => bucketRef.current?.openPicker();
 
   function go(next: View) {
     setView(next);
-    setConfirmDeleteGroup(false);
     window.scrollTo({ top: 0 });
   }
 
@@ -149,6 +142,8 @@ export function OrderForm({
     return {
       key: g.key,
       no: i + 1,
+      printSizeId: g.printSizeId,
+      sizeCode: size?.code ?? "",
       sizeLabel: size?.label ?? "",
       photos,
       unitPrice,
@@ -243,8 +238,12 @@ export function OrderForm({
     );
   }
 
-  /** Reuse an empty group for the picked size, otherwise open a new one. */
+  /** Open the size's group if it has one, else reuse an empty group or start a new one. */
   function startGroup(printSizeId: number) {
+    const existing = groupLines.find(
+      (g) => g.printSizeId === printSizeId && g.photos.length > 0,
+    );
+    if (existing) return go({ kind: "group", key: existing.key });
     const empty = groups.find((g) => !entries.some((e) => e.bucket === g.key));
     if (empty) {
       if (empty.printSizeId !== printSizeId)
@@ -326,222 +325,309 @@ export function OrderForm({
     });
   }
 
-  const backFromItems: View = hasContent
-    ? { kind: "checkout" }
-    : { kind: "pick" };
   const currentGroup =
     view.kind === "group"
       ? groupLines.find((g) => g.key === view.key)
       : undefined;
-  // A group that no longer exists falls back to the overview
+  // A group that no longer exists falls back to the size list
   const screen: View["kind"] =
-    view.kind === "group" && !currentGroup ? backFromItems.kind : view.kind;
+    view.kind === "group" && !currentGroup ? "pick" : view.kind;
+  const toPick = () => go({ kind: "pick" });
 
-  // ---- 選尺寸 ----
+  // Everything picked so far: listed on the size list and again at checkout
+  const orderLines: OrderLine[] = [
+    ...groupLines
+      .filter((g) => g.photos.length > 0)
+      .map((g) => ({
+        key: g.key,
+        photos: g.photos,
+        title: `${g.sizeLabel} 照片 ${g.prints} 張`,
+        desc: [
+          `${g.photos.length} 張照片`,
+          g.laminatedPrints > 0 && `護貝 ${g.laminatedPrints} 張`,
+          (g.printingAtMinimum || g.laminationAtMinimum) && "含最低收費",
+        ]
+          .filter(Boolean)
+          .join("・"),
+        amount: fmt(g.total),
+        view: { kind: "group", key: g.key } as const,
+      })),
+    ...idPhotoLines.map((l) => ({
+      key: `id-${l.id}`,
+      photos: idPhotoEntries.filter((e) => e.productId === l.id),
+      title: `證件照 ${l.sets} 組`,
+      desc: l.name.replace(/^證件照：/, ""),
+      amount: fmt(l.subtotal),
+      view: { kind: "id_photo" } as const,
+    })),
+    ...(customEntries.length > 0 || customNote
+      ? [
+          {
+            key: "custom",
+            photos: customEntries,
+            title: "客製化商品",
+            desc: customEntries.length
+              ? `${customEntries.length} 張照片`
+              : undefined,
+            amount: "另外報價",
+            view: { kind: "custom" } as const,
+          },
+        ]
+      : []),
+  ];
+  const prints = groupLines.reduce((n, g) => n + g.prints, 0);
+  const idSets = idPhotoLines.reduce((n, l) => n + l.sets, 0);
+  const orderCaption = [
+    prints > 0 && `照片 ${prints} 張`,
+    idSets > 0 && `證件照 ${idSets} 組`,
+    (customEntries.length > 0 || customNote) && "客製化",
+    itemLines.length > 0 &&
+      `${itemLines.reduce((n, i) => n + i.quantity, 0)} 個商品`,
+  ]
+    .filter(Boolean)
+    .join("・");
+
+  // ---- 選尺寸（也是整筆訂單的總覽） ----
   if (screen === "pick") {
     const minimumSizes = catalog.sizes
       .filter((s) => s.price < MIN_GROUP_CHARGE)
       .map((s) => s.label);
+    const printsBySize = new Map<number, number>();
+    for (const g of groupLines)
+      printsBySize.set(
+        g.printSizeId,
+        (printsBySize.get(g.printSizeId) ?? 0) + g.prints,
+      );
+    const checkoutButton = (
+      <PrimaryButton
+        onClick={() => go({ kind: "checkout" })}
+        disabled={!hasContent}
+      >
+        選好了，去結帳
+        <ArrowRightIcon className="size-5" />
+      </PrimaryButton>
+    );
     return (
-      <div className="grid gap-4">
-        <StepHeader
-          step={1}
-          onBack={hasContent ? () => go({ kind: "checkout" }) : undefined}
-        />
-        <h1 className={h1Class}>要洗哪個尺寸？</h1>
-        <div className="grid grid-cols-2 gap-2.5 pt-1.5 sm:grid-cols-4">
-          {catalog.sizes.map((s) => {
-            const tag = SIZE_TAG[s.code];
-            const box = SIZE_BOX[s.code];
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => startGroup(s.id)}
-                className={`hover:border-brand hover:bg-brand-tint relative flex min-h-23 items-center gap-3 rounded-2xl border-2 p-3 text-left transition-colors ${
-                  tag ? "border-brand bg-brand-tint" : "border-line bg-card"
-                }`}
-              >
-                {tag && (
-                  <span className="bg-brand absolute -top-2.5 right-2.5 rounded-full px-2.5 py-0.5 text-[13px] font-bold text-white">
-                    {tag}
-                  </span>
-                )}
-                {box && (
-                  <span
-                    aria-hidden="true"
-                    className="grid h-14 w-10 shrink-0 place-items-center"
-                  >
-                    <span
-                      className="border-brand bg-brand-soft rounded-[3px] border-2"
-                      style={{ width: box[0], height: box[1] }}
-                    />
-                  </span>
-                )}
-                <span className="grid min-w-0 gap-0.5">
-                  <span className="text-[23px] leading-tight font-bold">
-                    {s.label}
-                  </span>
-                  <span className="text-brand-dark text-base font-semibold">
-                    一張 ${s.price}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {minimumSizes.length > 0 && (
-          <p className="text-muted text-[15px]">
-            {minimumSizes.join("、")} 只洗一張時收 ${MIN_GROUP_CHARGE}。
-          </p>
-        )}
+      <div className="mx-auto grid w-full max-w-3xl gap-6 lg:max-w-none lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-8">
+        <div className="grid min-w-0 gap-5">
+          <StepHeader step={1} />
+          <div className="grid gap-1.5">
+            <h1 className={h1Class}>要洗哪些照片？</h1>
+            {!hasContent && (
+              <p className="text-muted text-base">
+                點一個尺寸放照片。洗好幾種尺寸也可以，選完會回到這裡。
+              </p>
+            )}
+          </div>
 
-        <h2 className={`${h2Class} mt-2`}>其他</h2>
-        <div className="border-line bg-card divide-line grid divide-y overflow-hidden rounded-2xl border">
-          {catalog.idPhotoSets.length > 0 && (
-            <ServiceLink
-              icon={<IdCardIcon className="size-6.5" />}
-              title="證件照"
-              price={`一組 $${catalog.idPhotoSets[0].price}`}
-              onClick={() => go({ kind: "id_photo" })}
-            />
+          {orderLines.length > 0 && (
+            <section className="grid gap-2.5 lg:hidden">
+              <h2 className={h2Class}>已經選的</h2>
+              <ul className="border-line bg-card divide-subtle grid divide-y overflow-hidden rounded-2xl border">
+                {orderLines.map((l) => (
+                  <OrderLineRow
+                    key={l.key}
+                    line={l}
+                    onClick={() => go(l.view)}
+                  />
+                ))}
+              </ul>
+              <p className="text-muted text-[15px]">
+                點一行可以加減照片或張數。
+              </p>
+            </section>
           )}
-          <ServiceLink
-            icon={<BookIcon className="size-6.5" />}
-            title="客製化商品"
-            price="專人報價"
-            onClick={() => go({ kind: "custom" })}
-          />
+
+          <section className="grid gap-2.5">
+            {hasContent && <h2 className={h2Class}>再洗別的尺寸</h2>}
+            <div className="grid grid-cols-2 gap-2.5 pt-1.5 sm:grid-cols-4">
+              {catalog.sizes.map((s) => {
+                const picked = printsBySize.get(s.id) ?? 0;
+                const tag = picked ? `${picked} 張` : SIZE_TAG[s.code];
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => startGroup(s.id)}
+                    className={`hover:border-brand hover:bg-brand-tint relative flex min-h-23 items-center gap-3 rounded-2xl border-2 p-3 text-left transition-colors ${
+                      picked
+                        ? "border-brand bg-brand-tint"
+                        : "border-line bg-card"
+                    }`}
+                  >
+                    {tag && (
+                      <span
+                        className={`absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[13px] font-bold text-white ${
+                          picked ? "bg-brand-dark pl-1.5" : "bg-brand"
+                        }`}
+                      >
+                        {picked > 0 && <CheckIcon className="size-3.5" />}
+                        {tag}
+                      </span>
+                    )}
+                    <SizeBox code={s.code} />
+                    <span className="grid min-w-0 gap-0.5">
+                      <span className="text-[23px] leading-tight font-bold">
+                        {s.label}
+                      </span>
+                      <span className="text-brand-dark text-base font-semibold">
+                        一張 ${s.price}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {minimumSizes.length > 0 && (
+              <p className="text-muted text-[15px]">
+                {minimumSizes.join("、")} 只洗一張時收 ${MIN_GROUP_CHARGE}。
+              </p>
+            )}
+          </section>
+
+          <section className="grid gap-2.5">
+            <h2 className={h2Class}>其他</h2>
+            <div className="border-line bg-card divide-line grid divide-y overflow-hidden rounded-2xl border">
+              {catalog.idPhotoSets.length > 0 && (
+                <ServiceLink
+                  icon={<IdCardIcon className="size-6.5" />}
+                  title="證件照"
+                  price={`一組 $${catalog.idPhotoSets[0].price}`}
+                  onClick={() => go({ kind: "id_photo" })}
+                />
+              )}
+              <ServiceLink
+                icon={<BookIcon className="size-6.5" />}
+                title="客製化商品"
+                price="專人報價"
+                onClick={() => go({ kind: "custom" })}
+              />
+              {catalog.addons.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold">
+                      {p.name}{" "}
+                      <span className="text-brand-dark text-base">
+                        ${p.price}
+                      </span>
+                    </p>
+                    {p.description && (
+                      <p className="text-muted text-[15px]">{p.description}</p>
+                    )}
+                  </div>
+                  <Stepper
+                    value={itemQty[p.id] ?? 0}
+                    min={0}
+                    onChange={(q) => setItemQty((m) => ({ ...m, [p.id]: q }))}
+                    label={`${p.name} 數量`}
+                    unit="個"
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
 
-        {hasContent && (
-          <button
-            type="button"
-            onClick={() => go({ kind: "checkout" })}
-            className="text-brand-dark min-h-12 text-[17px] font-bold underline underline-offset-4"
-          >
-            回到我的訂單（{fmt(total)}）
-          </button>
-        )}
+        <aside className="border-line bg-card sticky top-6 hidden gap-1 rounded-2xl border p-5 lg:grid">
+          <h2 className={h2Class}>你的訂單</h2>
+          {orderLines.length === 0 && itemLines.length === 0 ? (
+            <p className="text-muted py-3 text-base">
+              還沒選照片，先點左邊的尺寸。
+            </p>
+          ) : (
+            <ul className="divide-subtle grid divide-y">
+              {orderLines.map((l) => (
+                <OrderLineRow
+                  flush
+                  key={l.key}
+                  line={l}
+                  onClick={() => go(l.view)}
+                />
+              ))}
+              {itemLines.map((p) => (
+                <ItemLineRow key={p.id} item={p} />
+              ))}
+            </ul>
+          )}
+          <div className="border-line flex items-baseline justify-between gap-3 border-t pt-4 pb-3">
+            <span className="text-muted text-base">
+              {orderCaption || "總計"}
+            </span>
+            <span className="text-[26px] font-bold tabular-nums">
+              {fmt(total)}
+            </span>
+          </div>
+          <div className="flex">{checkoutButton}</div>
+        </aside>
+
+        <BottomBar
+          caption={orderCaption}
+          hint={!hasContent ? "點一個尺寸開始放照片" : undefined}
+          amount={total}
+          className="lg:hidden"
+        >
+          {checkoutButton}
+        </BottomBar>
       </div>
     );
   }
 
-  // ---- 一組照片 ----
+  // ---- 一個尺寸的照片 ----
   if (screen === "group" && currentGroup) {
-    const g = groups.find((x) => x.key === currentGroup.key)!;
-    const extra = freeExtraPrints(currentGroup);
+    const g = currentGroup;
+    const extra = freeExtraPrints(g);
+    const hasPhotos = g.photos.length > 0;
     return (
-      <div className="grid gap-4">
-        <StepHeader step={2} onBack={() => go(backFromItems)} />
-        <div className="flex items-center justify-between gap-3">
-          <h1 className={h1Class}>{currentGroup.sizeLabel} 照片</h1>
-          {/* The native picker sits invisibly on top of the text link */}
-          <label className="text-brand-dark relative flex min-h-12 items-center px-1 text-base font-bold underline underline-offset-4">
-            換尺寸
-            <select
-              value={g.printSizeId}
-              onChange={(e) =>
-                void uploader.updateGroupOptions(g.key, {
-                  printSizeId: Number(e.target.value),
-                })
-              }
-              className="absolute inset-0 cursor-pointer text-[15px] opacity-0"
-            >
-              {catalog.sizes.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}　${s.price}／張
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+      <div className={`${narrowClass} gap-4`}>
+        <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
+        <ContextBanner
+          icon={<SizeBox code={g.sizeCode} onTint />}
+          label={`${g.sizeLabel} 照片`}
+          price={[
+            `一張 $${g.unitPrice}`,
+            g.laminationPrice > 0 && `護貝每張 +$${g.laminationPrice}`,
+          ]
+            .filter(Boolean)
+            .join("・")}
+        />
 
         <PhotoBucket
-          ref={bucketRef}
           bucket={g.key}
-          entries={currentGroup.photos}
+          entries={g.photos}
           notices={notices.filter((n) => n.bucket === g.key)}
           uploader={uploader}
           quantityUnit="張"
-          laminationPrice={currentGroup.laminationPrice}
+          laminationPrice={g.laminationPrice}
+          onRemoveAll={() => void uploader.removeGroup(g.key)}
         />
 
-        {(currentGroup.printingAtMinimum ||
-          currentGroup.laminationAtMinimum) && (
+        {(g.printingAtMinimum || g.laminationAtMinimum) && (
           <p className="bg-brand-tint text-brand-dark grid gap-0.5 rounded-[14px] px-4 py-3 text-[15px] font-bold">
-            {currentGroup.printingAtMinimum && (
+            {g.printingAtMinimum && (
               <span>
-                洗照片最少收 {fmt(currentGroup.printing)}
+                洗照片最少收 {fmt(g.printing)}
                 {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
               </span>
             )}
-            {currentGroup.laminationAtMinimum && (
-              <span>護貝最少收 {fmt(currentGroup.lamination)}。</span>
+            {g.laminationAtMinimum && (
+              <span>護貝最少收 {fmt(g.lamination)}。</span>
             )}
           </p>
         )}
 
-        <div className="flex flex-wrap items-center justify-center gap-x-1 text-base">
-          <button
-            type="button"
-            onClick={() => go({ kind: "pick" })}
-            className="text-brand-dark min-h-11 px-2.5 font-bold underline underline-offset-4"
-          >
-            再洗別的尺寸
-          </button>
-          <span aria-hidden="true" className="bg-field h-4 w-px" />
-          {confirmDeleteGroup ? (
-            <span className="flex flex-wrap items-center gap-x-3 px-2.5">
-              確定不洗這個尺寸？
-              <button
-                type="button"
-                onClick={() => {
-                  void uploader.removeGroup(g.key);
-                  go(backFromItems);
-                }}
-                className="min-h-11 font-bold text-red-700 underline underline-offset-4"
-              >
-                確定
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDeleteGroup(false)}
-                className="min-h-11 underline underline-offset-4"
-              >
-                取消
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDeleteGroup(true)}
-              className="text-muted min-h-11 px-2.5 underline underline-offset-4"
-            >
-              不洗這個尺寸了
-            </button>
-          )}
-        </div>
-
         <BottomBar
-          caption={`共 ${currentGroup.prints} 張${
-            currentGroup.laminatedPrints
-              ? `，其中 ${currentGroup.laminatedPrints} 張護貝`
-              : ""
+          caption={`${g.sizeLabel} 共 ${g.prints} 張${
+            g.laminatedPrints ? `・護貝 ${g.laminatedPrints} 張` : ""
           }`}
-          hint={
-            currentGroup.photos.length === 0
-              ? "先加照片，才能到下一步"
-              : undefined
-          }
-          amount={currentGroup.total}
+          hint={hasPhotos ? undefined : `${g.sizeLabel} 還沒放照片`}
+          amount={g.total}
         >
-          <PhotoStepActions
-            hasPhotos={currentGroup.photos.length > 0}
-            canContinue={currentGroup.photos.length > 0}
-            onAdd={addPhotos}
-            onNext={() => go({ kind: "checkout" })}
-          />
+          <DoneButton done={hasPhotos} onClick={toPick}>
+            這個尺寸選好了
+          </DoneButton>
         </BottomBar>
       </div>
     );
@@ -549,16 +635,15 @@ export function OrderForm({
 
   // ---- 證件照 ----
   if (screen === "id_photo") {
-    const sets = idPhotoLines.reduce((n, l) => n + l.sets, 0);
+    const hasPhotos = idPhotoEntries.length > 0;
     return (
-      <div className="grid gap-4">
-        <StepHeader step={2} onBack={() => go(backFromItems)} />
-        <div className="flex items-baseline justify-between gap-3">
-          <h1 className={h1Class}>證件照</h1>
-          <p className="text-brand-dark text-[17px] font-bold">
-            一組 ${catalog.idPhotoSets[0]?.price ?? 0}
-          </p>
-        </div>
+      <div className={`${narrowClass} gap-4`}>
+        <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
+        <ContextBanner
+          icon={<IdCardIcon className="text-brand-dark size-8" />}
+          label="證件照"
+          price={`一組 $${catalog.idPhotoSets[0]?.price ?? 0}`}
+        />
 
         <h2 className={h2Class}>要哪一種？</h2>
         <div className="grid gap-2.5 sm:grid-cols-2">
@@ -576,7 +661,6 @@ export function OrderForm({
 
         <h2 className={`${h2Class} mt-2`}>照片和組數</h2>
         <PhotoBucket
-          ref={bucketRef}
           bucket={ID_PHOTO_BUCKET}
           entries={idPhotoEntries}
           notices={notices.filter((n) => n.bucket === ID_PHOTO_BUCKET)}
@@ -584,18 +668,13 @@ export function OrderForm({
           quantityUnit="組"
         />
         <BottomBar
-          caption={`共 ${sets} 組`}
-          hint={
-            idPhotoEntries.length === 0 ? "先加照片，才能到下一步" : undefined
-          }
+          caption={`證件照 共 ${idSets} 組`}
+          hint={hasPhotos ? undefined : "證件照還沒放照片"}
           amount={idPhotoLines.reduce((s, l) => s + l.subtotal, 0)}
         >
-          <PhotoStepActions
-            hasPhotos={idPhotoEntries.length > 0}
-            canContinue={idPhotoEntries.length > 0}
-            onAdd={addPhotos}
-            onNext={() => go({ kind: "checkout" })}
-          />
+          <DoneButton done={hasPhotos} onClick={toPick}>
+            證件照選好了
+          </DoneButton>
         </BottomBar>
       </div>
     );
@@ -605,12 +684,14 @@ export function OrderForm({
   if (screen === "custom") {
     const empty = customEntries.length === 0 && !customNote.trim();
     return (
-      <div className="grid gap-4">
-        <StepHeader step={2} onBack={() => go(backFromItems)} />
-        <h1 className={h1Class}>客製化商品</h1>
-        <p className="text-muted text-[17px]">送出後，店家會跟您聯絡報價。</p>
+      <div className={`${narrowClass} gap-4`}>
+        <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
+        <ContextBanner
+          icon={<BookIcon className="text-brand-dark size-8" />}
+          label="客製化商品"
+          price="送出後，店家會跟您聯絡報價"
+        />
         <PhotoBucket
-          ref={bucketRef}
           bucket={CUSTOM_BUCKET}
           entries={customEntries}
           notices={notices.filter((n) => n.bucket === CUSTOM_BUCKET)}
@@ -629,15 +710,12 @@ export function OrderForm({
         </label>
         <BottomBar
           caption="價錢"
-          hint={empty ? "先加照片或寫想做什麼" : undefined}
+          hint={empty ? "放照片或寫想做什麼" : undefined}
           amountText="另外報價"
         >
-          <PhotoStepActions
-            hasPhotos={customEntries.length > 0}
-            canContinue={!empty}
-            onAdd={addPhotos}
-            onNext={() => go({ kind: "checkout" })}
-          />
+          <DoneButton done={!empty} onClick={toPick}>
+            客製化選好了
+          </DoneButton>
         </BottomBar>
       </div>
     );
@@ -652,105 +730,43 @@ export function OrderForm({
   const errorCount = FIELD_ORDER.filter((k) => errors[k]).length;
   const firstError = FIELD_ORDER.map((k) => errors[k]).find(Boolean);
   return (
-    <div className="grid gap-5">
-      <StepHeader step={3} onBack={() => go({ kind: "pick" })} />
+    <div className={`${narrowClass} gap-5`}>
+      <StepHeader step={2} back={{ label: "回上一步修改", onClick: toPick }} />
       <h1 className={h1Class}>填資料，送出</h1>
 
       <section
         id={fieldId("content")}
         tabIndex={-1}
-        className={`bg-card overflow-hidden rounded-2xl border-2 outline-none ${
+        className={`bg-card overflow-hidden rounded-2xl border-2 px-4 outline-none ${
           errors.content ? "border-red-600" : "border-line"
         }`}
       >
         {!hasContent && (
-          <p className="text-muted px-4 pt-4 text-base">還沒有加照片。</p>
+          <p className="text-muted pt-4 text-base">還沒有加照片。</p>
         )}
         {errors.content && hasContent && (
-          <p className="mx-4 mt-4 rounded-xl bg-red-50 px-3.5 py-2.5 text-base text-red-800">
+          <p className="mt-4 rounded-xl bg-red-50 px-3.5 py-2.5 text-base text-red-800">
             {errors.content}
           </p>
         )}
-        <ul className="divide-line divide-y px-4">
-          {groupLines
-            .filter((g) => g.photos.length > 0)
-            .map((g) => (
-              <SummaryRow
-                key={g.key}
-                photos={g.photos}
-                title={`${g.sizeLabel} 照片 ${g.prints} 張`}
-                desc={[
-                  g.laminatedPrints > 0 && `護貝 ${g.laminatedPrints} 張`,
-                  (g.printingAtMinimum || g.laminationAtMinimum) &&
-                    "含最低收費",
-                ]
-                  .filter(Boolean)
-                  .join("，")}
-                amount={`$${g.total}`}
-                issue={uploadIssue(g.photos)}
-                onClick={() => go({ kind: "group", key: g.key })}
-              />
-            ))}
-          {idPhotoLines.map((l) => (
-            <SummaryRow
-              key={l.id}
-              photos={idPhotoEntries.filter((e) => e.productId === l.id)}
-              title={`證件照 ${l.sets} 組`}
-              desc={l.name.replace(/^證件照：/, "")}
-              amount={`$${l.subtotal}`}
-              issue={uploadIssue(
-                idPhotoEntries.filter((e) => e.productId === l.id),
-              )}
-              onClick={() => go({ kind: "id_photo" })}
+        <ul className="divide-subtle grid divide-y">
+          {orderLines.map((l) => (
+            <OrderLineRow
+              key={l.key}
+              line={l}
+              // Only rows with a failed upload lead back; everything else is edited one step back
+              onClick={uploadIssue(l.photos) ? () => go(l.view) : undefined}
             />
           ))}
-          {(customEntries.length > 0 || customNote) && (
-            <SummaryRow
-              photos={customEntries}
-              title="客製化商品"
-              desc={
-                customEntries.length
-                  ? `${customEntries.length} 張照片`
-                  : undefined
-              }
-              amount="另外報價"
-              issue={uploadIssue(customEntries)}
-              onClick={() => go({ kind: "custom" })}
-            />
-          )}
+          {itemLines.map((p) => (
+            <ItemLineRow key={p.id} item={p} />
+          ))}
         </ul>
-        {catalog.addons.length > 0 && (
-          <ul className="border-line grid gap-3 border-t px-4 py-4">
-            {catalog.addons.map((p) => (
-              <li
-                key={p.id}
-                className="flex flex-wrap items-center justify-between gap-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-[17px] font-bold">
-                    {p.name} <span className="text-brand-dark">${p.price}</span>
-                  </p>
-                  {p.description && (
-                    <p className="text-muted text-[15px]">{p.description}</p>
-                  )}
-                </div>
-                <Stepper
-                  value={itemQty[p.id] ?? 0}
-                  min={0}
-                  onChange={(q) => setItemQty((m) => ({ ...m, [p.id]: q }))}
-                  label={`${p.name} 數量`}
-                  unit="個"
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="flex flex-wrap gap-2 px-4 pt-3 pb-4">
-          <Chip onClick={() => go({ kind: "pick" })}>＋ 再洗別的尺寸</Chip>
-          {catalog.idPhotoSets.length > 0 && (
-            <Chip onClick={() => go({ kind: "id_photo" })}>＋ 證件照</Chip>
-          )}
-          <Chip onClick={() => go({ kind: "custom" })}>＋ 客製化商品</Chip>
+        <div className="border-line flex items-baseline justify-between gap-3 border-t py-3.5">
+          <span className="text-[17px] font-bold">總計</span>
+          <span className="text-[26px] font-bold tabular-nums">
+            {fmt(total)}
+          </span>
         </div>
       </section>
 
@@ -946,6 +962,8 @@ export function OrderForm({
 
 const h1Class = "text-[28px] leading-tight font-bold";
 const h2Class = "text-xl font-bold";
+/** Every screen but the size list keeps to one readable column. */
+const narrowClass = "mx-auto grid w-full max-w-3xl";
 const inputBase =
   "w-full rounded-[14px] border-2 border-field bg-card px-4 font-medium placeholder:text-muted/70 focus:outline-2 focus:outline-offset-1 focus:outline-brand aria-invalid:border-red-600 aria-invalid:focus:outline-red-600";
 const inputClass = `${inputBase} h-13.5 text-lg`;
@@ -1056,46 +1074,180 @@ function uploadIssue(photos: Entry[]) {
   return bad ? `${bad} 張沒傳成功，點這裡處理` : undefined;
 }
 
-/** Back button, "step N of 3" and a progress bar on top of each order screen. */
+/** Back button, the two steps and a progress bar on top of each order screen. */
 function StepHeader({
   step,
-  onBack,
+  back,
 }: {
-  step: 1 | 2 | 3;
-  /** Omit to link back to the home page. */
-  onBack?: () => void;
+  step: 1 | 2;
+  back?: { label: string; onClick: () => void };
 }) {
-  const backClass = "-ml-2.5 grid size-11 place-items-center";
   return (
     <div className="grid gap-2">
-      <div className="flex items-center justify-between">
-        {onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="返回"
-            className={backClass}
+      {back && (
+        <button
+          type="button"
+          onClick={back.onClick}
+          className="text-brand-dark hover:bg-brand-tint -ml-2 flex min-h-11 items-center gap-1 justify-self-start rounded-xl pr-3.5 pl-1.5 text-[17px] font-bold"
+        >
+          <ChevronLeftIcon className="size-5.5" />
+          {back.label}
+        </button>
+      )}
+      <ol className="text-muted flex justify-between text-[15px] font-bold">
+        {["選照片", "填資料送出"].map((name, i) => (
+          <li
+            key={name}
+            aria-current={i + 1 === step ? "step" : undefined}
+            className={i + 1 === step ? "text-brand-dark" : ""}
           >
-            <ChevronLeftIcon className="size-6" />
-          </button>
-        ) : (
-          <Link href="/" aria-label="回首頁" className={backClass}>
-            <ChevronLeftIcon className="size-6" />
-          </Link>
-        )}
-        <p className="text-muted text-base font-semibold">
-          第 {step} 步／共 3 步
-        </p>
-      </div>
-      <div aria-hidden="true" className="flex gap-1">
-        {[1, 2, 3].map((n) => (
+            {i + 1} {name}
+          </li>
+        ))}
+      </ol>
+      <div aria-hidden="true" className="grid grid-cols-2 gap-1.5">
+        {[1, 2].map((n) => (
           <span
             key={n}
-            className={`h-1.5 flex-1 rounded-full ${n <= step ? "bg-brand" : "bg-line"}`}
+            className={`h-1.5 rounded-full ${n <= step ? "bg-brand" : "bg-line"}`}
           />
         ))}
       </div>
     </div>
+  );
+}
+
+/** Outline of the print's proportions, as drawn on the size buttons. */
+function SizeBox({ code, onTint }: { code: string; onTint?: boolean }) {
+  const box = SIZE_BOX[code];
+  if (!box) return null;
+  return (
+    <span
+      aria-hidden="true"
+      className="grid h-14 w-10 shrink-0 place-items-center"
+    >
+      <span
+        className={`border-brand rounded-[3px] border-2 ${
+          onTint ? "bg-card" : "bg-brand-soft"
+        }`}
+        style={{ width: box[0], height: box[1] }}
+      />
+    </span>
+  );
+}
+
+/** Tinted card on top of a photo screen, so it's always clear what the photos are for. */
+function ContextBanner({
+  icon,
+  label,
+  price,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  price: string;
+}) {
+  return (
+    <div className="border-brand bg-brand-tint flex items-center gap-3.5 rounded-2xl border-2 px-4 py-3.5">
+      <span className="grid w-10 shrink-0 place-items-center">{icon}</span>
+      <div className="grid min-w-0 gap-0.5">
+        <span className="text-brand-dark text-[13px] font-bold">
+          正在放這個項目的照片
+        </span>
+        <h1 className={h1Class}>{label}</h1>
+        <span className="text-muted text-[15px]">{price}</span>
+      </div>
+    </div>
+  );
+}
+
+type OrderLine = {
+  key: string;
+  photos: Entry[];
+  title: string;
+  desc?: string;
+  amount: string;
+  view: View;
+};
+
+/** One row of the order: stacked thumbnails, what it is, and its amount. */
+function OrderLineRow({
+  line,
+  onClick,
+  flush,
+}: {
+  line: OrderLine;
+  /** Omit for a read-only row. */
+  onClick?: () => void;
+  /** Keep the text aligned with the card's own padding (side panel). */
+  flush?: boolean;
+}) {
+  const thumbs = line.photos.filter((p) => p.previewUrl).slice(0, 3);
+  const issue = uploadIssue(line.photos);
+  const body = (
+    <>
+      <span className="flex w-20 shrink-0">
+        {thumbs.map((p) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={p.localId}
+            src={p.previewUrl}
+            alt=""
+            className="border-card bg-subtle -mr-3 size-11 rounded-lg border-2 object-cover"
+          />
+        ))}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[17px] leading-snug font-bold">
+          {line.title}
+        </span>
+        {line.desc && (
+          <span className="text-muted block text-[15px]">{line.desc}</span>
+        )}
+        {issue && (
+          <span className="block text-[15px] font-bold text-red-700">
+            {issue}
+          </span>
+        )}
+      </span>
+      <span className="text-[17px] font-bold whitespace-nowrap tabular-nums">
+        {line.amount}
+      </span>
+      {onClick && <ChevronRightIcon className="text-muted size-5 shrink-0" />}
+    </>
+  );
+  return (
+    <li>
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`hover:bg-brand-tint flex min-h-19 w-full items-center gap-3 py-3 text-left ${
+            flush ? "-mx-2 rounded-xl px-2" : "px-3.5"
+          }`}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="flex min-h-19 items-center gap-3 py-3">{body}</div>
+      )}
+    </li>
+  );
+}
+
+function ItemLineRow({
+  item,
+}: {
+  item: { name: string; quantity: number; subtotal: number };
+}) {
+  return (
+    <li className="flex min-h-14 items-center justify-between gap-3 py-3">
+      <span className="text-[17px] font-bold">
+        {item.name} {item.quantity} 個
+      </span>
+      <span className="text-[17px] font-bold tabular-nums">
+        {fmt(item.subtotal)}
+      </span>
+    </li>
   );
 }
 
@@ -1161,82 +1313,6 @@ function ChoiceCard({
   );
 }
 
-function SummaryRow({
-  photos,
-  title,
-  desc,
-  amount,
-  issue,
-  onClick,
-}: {
-  photos: Entry[];
-  title: string;
-  desc?: string;
-  amount: string;
-  issue?: string;
-  onClick: () => void;
-}) {
-  const thumbs = photos.filter((p) => p.previewUrl).slice(0, 4);
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full items-center gap-3 py-3.5 text-left"
-      >
-        <span className="bg-subtle grid size-14 shrink-0 grid-cols-2 gap-0.5 overflow-hidden rounded-xl">
-          {thumbs.map((p) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={p.localId}
-              src={p.previewUrl}
-              alt=""
-              className={`h-full w-full object-cover ${
-                thumbs.length === 1 ? "col-span-2 row-span-2" : ""
-              }`}
-            />
-          ))}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[17px] leading-snug font-bold">
-            {title}
-          </span>
-          {desc && <span className="text-muted block text-[15px]">{desc}</span>}
-          {issue && (
-            <span className="block text-[15px] font-bold text-red-700">
-              {issue}
-            </span>
-          )}
-          <span className="text-brand-dark text-base font-bold underline underline-offset-4">
-            修改
-          </span>
-        </span>
-        <span className="text-[22px] font-bold whitespace-nowrap">
-          {amount}
-        </span>
-      </button>
-    </li>
-  );
-}
-
-function Chip({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="border-line bg-background hover:border-brand min-h-11 rounded-full border-2 px-3.5 text-[15px] font-bold"
-    >
-      {children}
-    </button>
-  );
-}
-
 /** Sticky footer with the running amount and the step's main action. */
 function BottomBar({
   caption,
@@ -1245,6 +1321,7 @@ function BottomBar({
   amountText,
   alert,
   onAlertClick,
+  className = "",
   children,
 }: {
   caption: string;
@@ -1255,6 +1332,7 @@ function BottomBar({
   /** Problem with the last attempt, kept in view above the bar. */
   alert?: string;
   onAlertClick?: () => void;
+  className?: string;
   children: React.ReactNode;
 }) {
   const typing = useTouchTyping();
@@ -1262,7 +1340,7 @@ function BottomBar({
     <div
       className={`border-line bg-card fixed inset-x-0 bottom-0 z-10 border-t ${
         typing ? "hidden" : ""
-      }`}
+      } ${className}`}
     >
       {alert && (
         <div role="alert" className="border-b border-red-200 bg-red-50">
@@ -1331,37 +1409,33 @@ function useTouchTyping() {
 }
 
 /**
- * Buttons of a photo step: adding photos is the main action; moving on is the
- * quieter one, so nobody leaves before all their photos are in.
+ * Bottom-bar action of a photo screen: back to the size list either way, but
+ * only solid once something is in, so an empty screen has no loud button.
  */
-function PhotoStepActions({
-  hasPhotos,
-  canContinue,
-  onAdd,
-  onNext,
+function DoneButton({
+  done,
+  onClick,
+  children,
 }: {
-  hasPhotos: boolean;
-  canContinue: boolean;
-  onAdd: () => void;
-  onNext: () => void;
+  done: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
-  return (
-    <>
-      {canContinue && (
-        <button
-          type="button"
-          onClick={onNext}
-          className="border-brand bg-card text-brand-dark hover:bg-brand-tint flex h-13.5 min-w-0 flex-1 items-center justify-center gap-1 rounded-[14px] border-2 px-2 text-[17px] font-bold whitespace-nowrap"
-        >
-          選好了，下一步
-          <ArrowRightIcon className="size-5" />
-        </button>
-      )}
-      <PrimaryButton onClick={onAdd}>
-        <PlusIcon className="size-5" />
-        {hasPhotos ? "再加照片" : "加照片"}
+  if (done)
+    return (
+      <PrimaryButton onClick={onClick}>
+        <CheckIcon className="size-5" />
+        {children}
       </PrimaryButton>
-    </>
+    );
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="border-brand bg-card text-brand-dark hover:bg-brand-tint flex h-13.5 min-w-0 flex-1 items-center justify-center rounded-[14px] border-2 px-3 text-[17px] font-bold whitespace-nowrap"
+    >
+      先不加，回到所有尺寸
+    </button>
   );
 }
 

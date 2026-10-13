@@ -16,12 +16,12 @@ export const metadata: Metadata = { title: "線上下單｜線上洗照片" };
 export default function OrderPage() {
   return (
     <>
-      <ShopHeader>
+      <ShopHeader wide>
         <Suspense fallback={null}>
           <MemberChip />
         </Suspense>
       </ShopHeader>
-      <main className="mx-auto w-full max-w-3xl px-4 pt-5 pb-40">
+      <main className="mx-auto w-full max-w-6xl px-4 pt-5 pb-40 sm:px-6">
         <Suspense fallback={<p className="text-muted">載入中…</p>}>
           <OrderLoader />
         </Suspense>
