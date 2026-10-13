@@ -16,7 +16,13 @@ export type PhotoRow = {
 
 const PREVIEW = 20;
 
-type Preview = { id: string; fileName: string; url: string | null; error?: string };
+type Preview = {
+  id: string;
+  fileName: string;
+  url: string | null;
+  loaded?: boolean;
+  error?: string;
+};
 
 /** The order's photo list with folder chips; long lists start collapsed. */
 export function PhotoTable({
@@ -160,10 +166,10 @@ export function PhotoTable({
         onClose={() => setPreview(null)}
         onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
         aria-label={preview?.fileName ?? "照片預覽"}
-        className="m-auto max-h-[92vh] max-w-[92vw] rounded-xl bg-white p-0 backdrop:bg-black/70"
+        className="m-auto h-[92vh] w-[92vw] max-w-6xl rounded-xl bg-white p-0 backdrop:bg-black/70"
       >
         {preview && (
-          <div className="flex flex-col">
+          <div className="flex h-full flex-col">
             <div className="border-admin-line-soft flex items-center gap-3 border-b px-4 py-2">
               <span className="font-admin-mono min-w-0 flex-1 truncate text-xs">
                 {preview.fileName}
@@ -187,19 +193,38 @@ export function PhotoTable({
                 <XIcon className="size-5" />
               </button>
             </div>
-            {preview.url ? (
-              // Presigned R2 URL straight to the browser; next/image would proxy it.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={preview.url}
-                alt={preview.fileName}
-                className="max-h-[calc(92vh-3.5rem)] max-w-[92vw] object-contain"
-              />
-            ) : (
-              <p className="text-ink-3 px-10 py-16 text-center text-[13px]">
-                {preview.error ?? "載入原圖中…（原圖檔案較大，請稍候）"}
-              </p>
-            )}
+            {/* Fixed-size stage: the dialog doesn't resize while the original
+                downloads, and the image fades in only once fully decoded. */}
+            <div className="relative min-h-0 flex-1 bg-[#f5f6f8]">
+              {preview.url && !preview.error && (
+                // Presigned R2 URL straight to the browser; next/image would proxy it.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={preview.url}
+                  alt={preview.fileName}
+                  onLoad={() =>
+                    setPreview((cur) =>
+                      cur?.id === preview.id ? { ...cur, loaded: true } : cur,
+                    )
+                  }
+                  onError={() =>
+                    setPreview((cur) =>
+                      cur?.id === preview.id
+                        ? { ...cur, error: "讀取失敗，請再試一次" }
+                        : cur,
+                    )
+                  }
+                  className={`absolute inset-0 size-full object-contain transition-opacity duration-200 ${
+                    preview.loaded ? "opacity-100" : "opacity-0"
+                  }`}
+                />
+              )}
+              {!preview.loaded && (
+                <p className="text-ink-3 absolute inset-0 grid place-items-center px-10 text-center text-[13px]">
+                  {preview.error ?? "載入原圖中…（原圖檔案較大，請稍候）"}
+                </p>
+              )}
+            </div>
           </div>
         )}
       </dialog>

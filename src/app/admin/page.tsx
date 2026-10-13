@@ -232,7 +232,7 @@ async function Overview() {
               <p className="text-ink-3 px-5 py-8 text-center">沒有新訂單</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[680px] text-[13px]">
+                <table className="w-full min-w-[760px] text-[13px]">
                   <thead>
                     <tr>
                       <th className={th}>訂單編號</th>
@@ -251,7 +251,7 @@ async function Overview() {
                         key={o.id}
                         className="border-admin-line-soft hover:bg-admin-hover border-t"
                       >
-                        <td className={td}>
+                        <td className={`${td} whitespace-nowrap`}>
                           <Link
                             href={`/admin/orders/${o.id}`}
                             className={`${btn.link} font-admin-mono`}
@@ -262,16 +262,18 @@ async function Overview() {
                             {o.submittedAt && formatTaipeiTime(o.submittedAt)}
                           </div>
                         </td>
-                        <td className={td}>{o.contactName}</td>
+                        <td className={`${td} whitespace-nowrap`}>
+                          {o.contactName}
+                        </td>
                         <td className={`${td} text-ink-2`}>{o.summary}</td>
-                        <td className={td}>
+                        <td className={`${td} whitespace-nowrap`}>
                           <PaymentStatusBadge status={o.paymentStatus} />
                           <div className="text-ink-4 mt-1 text-xs">
                             {o.paymentMethod && PAYMENT_LABEL[o.paymentMethod]}
                           </div>
                         </td>
                         <td
-                          className={`${td} text-right font-semibold tabular-nums`}
+                          className={`${td} text-right font-semibold whitespace-nowrap tabular-nums`}
                         >
                           {formatNtd(o.totalAmount)}
                         </td>
