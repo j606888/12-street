@@ -1,7 +1,7 @@
 "use client";
 
 import { useImperativeHandle, useMemo, useRef, useState } from "react";
-import { ImageIcon, MinusIcon, PlusIcon, XIcon } from "@/components/icons";
+import { MinusIcon, PlusIcon, UploadIcon, XIcon } from "@/components/icons";
 import { MAX_QUANTITY } from "@/lib/validators/order";
 import type { Entry, Notice, PhotoUploader } from "./use-photo-uploader";
 
@@ -16,7 +16,7 @@ const STATUS_LABEL: Record<Entry["status"], string> = {
   missing: "未完成上傳",
 };
 
-/** Lets the step's main button (in the bottom bar) open the file picker. */
+/** Lets the screen around the bucket open the file picker. */
 export type PhotoBucketHandle = { openPicker: () => void };
 
 export function PhotoBucket({
@@ -27,6 +27,7 @@ export function PhotoBucket({
   uploader,
   quantityUnit,
   laminationPrice,
+  onRemoveAll,
 }: {
   ref?: React.Ref<PhotoBucketHandle>;
   bucket: string;
@@ -37,6 +38,8 @@ export function PhotoBucket({
   quantityUnit?: "張" | "組";
   /** Per-print lamination (護貝) price; pass it to let each photo pick how many prints to laminate. */
   laminationPrice?: number;
+  /** Offer a confirmed "remove every photo" next to the count. */
+  onRemoveAll?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -136,36 +139,48 @@ export function PhotoBucket({
         <button
           type="button"
           onClick={openPicker}
-          className="grid justify-items-center gap-2 px-4 py-12 text-center"
+          className={`border-field hover:border-brand hover:bg-brand-tint grid min-h-90 content-center justify-items-center gap-3.5 rounded-2xl border-2 border-dashed px-4 py-10 text-center transition-colors ${
+            dragging ? "border-brand bg-brand-tint" : "bg-card"
+          }`}
         >
-          <span className="bg-subtle text-brand grid size-21 place-items-center rounded-[22px]">
-            <ImageIcon className="size-10" />
+          <span className="bg-brand-soft text-brand-dark grid size-18 place-items-center rounded-[20px]">
+            <UploadIcon className="size-9" />
           </span>
-          <span className="mt-1.5 text-xl font-bold">還沒有照片</span>
-          <span className="text-muted text-[17px] leading-relaxed">
-            按下面的「加照片」，可以一次選很多張。
+          <span className="text-xl font-bold">
+            點這裡選照片
+            <span className="hidden pointer-fine:inline">，或把照片拖進來</span>
+          </span>
+          <span className="text-muted text-base leading-relaxed">
+            可以一次選很多張
             <br />
-            只收 JPG 檔。
+            只收 JPG 檔
+          </span>
+          <span className="border-brand text-brand-dark mt-1.5 inline-flex h-12 items-center gap-2 rounded-[14px] border-2 px-5.5 text-[17px] font-bold">
+            <PlusIcon className="size-5" />
+            從相簿選
           </span>
         </button>
       )}
 
       {entries.length > 0 && (
-        <div className="flex items-baseline justify-between gap-2">
-          <h3 className="text-[17px] font-bold">
-            已選 {entries.length} 張照片
-          </h3>
-          <span className="text-muted text-base">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h3 className="text-xl font-bold">已放 {entries.length} 張照片</h3>
+          <span className="text-muted flex items-baseline gap-3 text-base">
             {done < entries.length || failed > 0 ? (
-              <>
+              <span>
                 已上傳 {done}／{entries.length}
                 {failed > 0 && (
                   <span className="text-red-700">，失敗 {failed} 張</span>
                 )}
-              </>
+              </span>
             ) : (
-              quantityUnit && `共 ${prints} ${quantityUnit}`
+              quantityUnit && (
+                <span>
+                  共 {prints} {quantityUnit}
+                </span>
+              )
             )}
+            {onRemoveAll && <RemoveAll key={bucket} onConfirm={onRemoveAll} />}
           </span>
         </div>
       )}
@@ -200,6 +215,9 @@ export function PhotoBucket({
 
       {entries.length > 0 && quantityUnit && (
         <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
+          <li className="grid">
+            <AddTile onClick={openPicker} dragging={dragging} />
+          </li>
           {entries.map((e) => (
             <li
               key={e.localId}
@@ -265,6 +283,9 @@ export function PhotoBucket({
 
       {entries.length > 0 && !quantityUnit && (
         <ul className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5">
+          <li className="grid aspect-square">
+            <AddTile onClick={openPicker} dragging={dragging} compact />
+          </li>
           {entries.map((e) => (
             <li key={e.localId} className="relative">
               <Thumb entry={e} className="aspect-square w-full rounded-xl" />
@@ -285,6 +306,71 @@ export function PhotoBucket({
 }
 
 const clampQty = (n: number) => Math.min(MAX_QUANTITY, Math.max(1, n));
+
+/** Dashed first cell of the photo grid: opens the picker, and lights up while dragging. */
+function AddTile({
+  onClick,
+  dragging,
+  compact,
+}: {
+  onClick: () => void;
+  dragging: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`border-field hover:border-brand hover:bg-brand-tint grid content-center justify-items-center gap-2 rounded-2xl border-2 border-dashed p-3 text-center transition-colors ${
+        compact ? "" : "min-h-56"
+      } ${dragging ? "border-brand bg-brand-tint" : "bg-card"}`}
+    >
+      <span
+        className={`bg-brand-soft text-brand-dark grid place-items-center rounded-2xl ${
+          compact ? "size-10" : "size-13"
+        }`}
+      >
+        <PlusIcon className={compact ? "size-5" : "size-6.5"} />
+      </span>
+      <span className="text-brand-dark text-[17px] font-bold">再加照片</span>
+      {!compact && <span className="text-muted text-[15px]">只收 JPG</span>}
+    </button>
+  );
+}
+
+/** "全部拿掉" with an inline yes/no, so one tap can't wipe a whole size. */
+function RemoveAll({ onConfirm }: { onConfirm: () => void }) {
+  const [asking, setAsking] = useState(false);
+  if (!asking)
+    return (
+      <button
+        type="button"
+        onClick={() => setAsking(true)}
+        className="-my-2 min-h-11 font-bold underline underline-offset-4"
+      >
+        全部拿掉
+      </button>
+    );
+  return (
+    <span className="-my-2 flex items-center gap-3">
+      <span className="text-foreground font-bold">確定全部拿掉？</span>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="min-h-11 font-bold text-red-700 underline underline-offset-4"
+      >
+        確定
+      </button>
+      <button
+        type="button"
+        onClick={() => setAsking(false)}
+        className="min-h-11 underline underline-offset-4"
+      >
+        取消
+      </button>
+    </span>
+  );
+}
 
 function Thumb({ entry: e, className }: { entry: Entry; className: string }) {
   return (
