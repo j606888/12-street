@@ -1,27 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { LIFF_SIGNED_OUT_KEY } from "@/components/liff-auto-login";
+import { isLineApp } from "@/components/liff-auto-login";
+
+const noop = () => () => {};
 
 export function SignOutButton({ className }: { className?: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  // Hidden inside LINE: the LINE account is the login (LIFF signs straight back in).
+  // Rendered as hidden on the server too, so web visitors see it after hydration.
+  const inLine = useSyncExternalStore(noop, isLineApp, () => true);
 
   async function signOut() {
     setPending(true);
     try {
       await authClient.signOut();
-      try {
-        sessionStorage.setItem(LIFF_SIGNED_OUT_KEY, "1");
-      } catch {}
       router.push("/");
       router.refresh();
     } finally {
       setPending(false);
     }
   }
+
+  if (inLine) return null;
 
   return (
     <button

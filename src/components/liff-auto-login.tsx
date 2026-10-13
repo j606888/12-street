@@ -6,8 +6,10 @@ import { authClient } from "@/lib/auth-client";
 
 const LIFF_ID = process.env.NEXT_PUBLIC_LIFF_ID;
 
-/** Set by the sign-out button so we don't sign straight back in. */
-export const LIFF_SIGNED_OUT_KEY = "liff-signed-out";
+/** The LINE app's in-app browser, where the LINE account is the identity. */
+export function isLineApp() {
+  return /\bLine\//i.test(navigator.userAgent);
+}
 
 /**
  * Opened from the LINE app through a LIFF URL: sign in with the LIFF ID token
@@ -18,7 +20,7 @@ export function LiffAutoLogin() {
 
   useEffect(() => {
     // Only the LINE in-app browser can be a LIFF client; skip loading the SDK elsewhere
-    if (!LIFF_ID || !/\bLine\//i.test(navigator.userAgent)) return;
+    if (!LIFF_ID || !isLineApp()) return;
     let cancelled = false;
 
     (async () => {
@@ -26,7 +28,6 @@ export function LiffAutoLogin() {
       // Also follows `liff.state` to the path in the LIFF URL
       await liff.init({ liffId: LIFF_ID });
       if (cancelled || !liff.isInClient()) return;
-      if (sessionStorage.getItem(LIFF_SIGNED_OUT_KEY)) return;
 
       const { data: session } = await authClient.getSession();
       const token = liff.getIDToken();
