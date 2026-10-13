@@ -24,14 +24,20 @@ export function LiffAutoLogin() {
     let cancelled = false;
 
     (async () => {
-      const { default: liff } = await import("@line/liff");
-      // Also follows `liff.state` to the path in the LIFF URL
-      await liff.init({ liffId: LIFF_ID });
-      if (cancelled || !liff.isInClient()) return;
+      // The session check doesn't need the SDK, so run it alongside loading
+      // and initialising LIFF instead of after.
+      const [{ data: session }, liff] = await Promise.all([
+        authClient.getSession(),
+        import("@line/liff").then(async ({ default: liff }) => {
+          // Also follows `liff.state` to the path in the LIFF URL
+          await liff.init({ liffId: LIFF_ID });
+          return liff;
+        }),
+      ]);
+      if (cancelled || session || !liff.isInClient()) return;
 
-      const { data: session } = await authClient.getSession();
       const token = liff.getIDToken();
-      if (cancelled || session || !token) return;
+      if (!token) return;
 
       const { error } = await authClient.signIn.social({
         provider: "line",
@@ -42,7 +48,9 @@ export function LiffAutoLogin() {
       if (location.pathname === "/login") {
         const next = new URLSearchParams(location.search).get("next");
         // Only allow same-site relative redirects
-        router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/");
+        router.replace(
+          next?.startsWith("/") && !next.startsWith("//") ? next : "/",
+        );
       } else {
         router.refresh();
       }
