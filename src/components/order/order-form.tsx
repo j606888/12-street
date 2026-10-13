@@ -72,7 +72,6 @@ const fieldId = (key: FieldKey) => `checkout-${key}`;
 
 const fmt = (n: number) => `$${n.toLocaleString("zh-TW")}`;
 
-const SIZE_TAG: Record<string, string> = { "4x6": "最多人洗" };
 /** Outline drawn on each size button, in px, to show the print's proportions. */
 const SIZE_BOX: Record<string, [width: number, height: number]> = {
   "2x3s": [7, 11], // actual size not confirmed yet, see docs/owner-pricing.md
@@ -443,7 +442,6 @@ export function OrderForm({
             <div className="grid grid-cols-2 gap-2.5 pt-1.5 sm:grid-cols-4">
               {catalog.sizes.map((s) => {
                 const picked = printsBySize.get(s.id) ?? 0;
-                const tag = picked ? `${picked} 張` : SIZE_TAG[s.code];
                 return (
                   <button
                     key={s.id}
@@ -455,14 +453,10 @@ export function OrderForm({
                         : "border-line bg-card"
                     }`}
                   >
-                    {tag && (
-                      <span
-                        className={`absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[13px] font-bold text-white ${
-                          picked ? "bg-brand-dark pl-1.5" : "bg-brand"
-                        }`}
-                      >
-                        {picked > 0 && <CheckIcon className="size-3.5" />}
-                        {tag}
+                    {picked > 0 && (
+                      <span className="bg-brand-dark absolute -top-2.5 right-2.5 flex items-center gap-1 rounded-full py-0.5 pr-2.5 pl-1.5 text-[13px] font-bold text-white">
+                        <CheckIcon className="size-3.5" />
+                        {picked} 張
                       </span>
                     )}
                     <SizeBox code={s.code} />

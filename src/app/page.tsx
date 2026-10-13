@@ -8,10 +8,8 @@ import { MIN_GROUP_CHARGE } from "@/lib/pricing";
 import { getSession } from "@/lib/session";
 import { SHOP } from "@/lib/shop-info";
 
-const SIZE_TAG: Record<string, string> = { "4x6": "最多人洗" };
-
 const STEPS = [
-  ["選尺寸", "4×6 最多人洗"],
+  ["選尺寸", "看要洗多大張"],
   ["選照片", "從手機相簿挑"],
   ["到店取件", "拿照片時再付錢也可以"],
 ] as const;
@@ -230,19 +228,11 @@ async function PriceList() {
     <>
       <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         {catalog.sizes.map((s) => {
-          const tag = SIZE_TAG[s.code];
           return (
             <li
               key={s.id}
-              className={`relative grid gap-0.5 rounded-2xl border-2 px-4 py-3.5 lg:px-5 lg:py-4.5 ${
-                tag ? "border-brand bg-brand-tint" : "border-line bg-card"
-              }`}
+              className="border-line bg-card relative grid gap-0.5 rounded-2xl border-2 px-4 py-3.5 lg:px-5 lg:py-4.5"
             >
-              {tag && (
-                <span className="bg-brand absolute -top-2.5 right-2.5 rounded-full px-2.5 py-0.5 text-[13px] font-bold text-white">
-                  {tag}
-                </span>
-              )}
               <span className="text-[23px] leading-tight font-bold lg:text-[26px]">
                 {s.label}
               </span>
