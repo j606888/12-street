@@ -2,6 +2,7 @@ import "server-only";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { nextCookies } from "better-auth/next-js";
+import { claimGuestDraft } from "@/lib/claim-draft";
 import { db } from "@/lib/db";
 import * as schema from "@/db/schema";
 
@@ -28,6 +29,19 @@ export const auth = betterAuth({
   },
   session: {
     expiresIn: 60 * 60 * 24 * 30,
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        // Keep what a guest picked before signing in (LINE login or LIFF)
+        after: async (session, ctx) => {
+          const token = ctx?.getCookie("draft_token");
+          if (!token) return;
+          await claimGuestDraft(session.userId, token);
+          ctx?.setCookie("draft_token", "", { path: "/", maxAge: 0 });
+        },
+      },
+    },
   },
   plugins: [nextCookies()],
 });
