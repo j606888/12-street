@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { LIFF_SIGNED_OUT_KEY } from "@/components/liff-auto-login";
 
 export function SignOutButton({ className }: { className?: string }) {
   const router = useRouter();
@@ -12,6 +13,9 @@ export function SignOutButton({ className }: { className?: string }) {
     setPending(true);
     try {
       await authClient.signOut();
+      try {
+        sessionStorage.setItem(LIFF_SIGNED_OUT_KEY, "1");
+      } catch {}
       router.push("/");
       router.refresh();
     } finally {

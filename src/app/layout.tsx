@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Noto_Sans_TC } from "next/font/google";
+import { LiffAutoLogin } from "@/components/liff-auto-login";
 import "./globals.css";
 
 const notoSansTC = Noto_Sans_TC({
@@ -22,7 +23,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-TW" className={`${dmSans.variable} ${notoSansTC.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        {children}
+        <LiffAutoLogin />
+      </body>
     </html>
   );
 }
