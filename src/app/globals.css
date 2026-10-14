@@ -19,8 +19,11 @@
   --color-brand-dark: #3d586f;
   --color-brand-tint: #e9eff3;
   --color-brand-soft: #dfe7ed;
-  /* Darker than LINE's own green so white text stays readable */
-  --color-line-green: #05853a;
+  /* Logo only (heart and the grey "2"); not for UI */
+  --color-logo-wine: #8a2f35;
+  --color-logo-grey: #8b939b;
+  /* LINE's official brand green; required by its login button guidelines */
+  --color-line-green: #06c755;
   --font-sans: var(--font-dm-sans), var(--font-noto-sans-tc), sans-serif;
 
   /* Admin (cool grey, see the admin design canvas) */

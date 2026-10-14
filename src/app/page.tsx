@@ -7,6 +7,7 @@ import { loadCatalog } from "@/lib/draft";
 import { MIN_GROUP_CHARGE } from "@/lib/pricing";
 import { getSession } from "@/lib/session";
 import { SHOP } from "@/lib/shop-info";
+import { LineLoginLink } from "@/components/line-login";
 
 const STEPS = [
   ["選尺寸", "看要洗多大張"],
@@ -175,12 +176,13 @@ async function HeaderMember() {
       我的訂單
     </Link>
   ) : (
-    <Link
+    <LineLoginLink
       href="/login?next=/order"
-      className="bg-line-green hidden min-h-11 items-center rounded-full px-4 text-white sm:flex"
+      size="sm"
+      className="max-sm:hidden"
     >
       LINE 登入
-    </Link>
+    </LineLoginLink>
   );
 }
 
@@ -194,12 +196,13 @@ async function MemberButton() {
       我的訂單
     </Link>
   ) : (
-    <Link
+    <LineLoginLink
       href="/login?next=/order"
-      className={`${bigButton} bg-line-green text-white`}
+      size="lg"
+      className="sm:flex-1 sm:basis-56"
     >
       用 LINE 登入
-    </Link>
+    </LineLoginLink>
   );
 }
 

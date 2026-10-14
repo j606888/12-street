@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
+import { LineButtonContent, lineButtonClass } from "@/components/line-login";
 
 export function LoginButtons({ next }: { next: string }) {
   const [pending, setPending] = useState(false);
@@ -18,9 +19,11 @@ export function LoginButtons({ next }: { next: string }) {
         type="button"
         onClick={signInWithLine}
         disabled={pending}
-        className="bg-line-green h-13.5 rounded-[14px] px-6 text-lg font-bold text-white disabled:opacity-60"
+        className={`${lineButtonClass("lg")} disabled:cursor-wait`}
       >
-        {pending ? "前往 LINE…" : "用 LINE 登入"}
+        <LineButtonContent size="lg">
+          {pending ? "前往 LINE…" : "用 LINE 登入"}
+        </LineButtonContent>
       </button>
       <Link
         href="/order"

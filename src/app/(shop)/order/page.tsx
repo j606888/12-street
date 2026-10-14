@@ -10,6 +10,7 @@ import {
   loadCatalog,
   loadDraft,
 } from "@/lib/draft";
+import { LineLoginLink } from "@/components/line-login";
 
 export const metadata: Metadata = { title: "線上下單｜線上洗照片" };
 
@@ -43,12 +44,9 @@ async function MemberChip() {
     );
   }
   return (
-    <Link
-      href="/login?next=/order"
-      className="bg-line-green flex h-11 shrink-0 items-center rounded-full px-4 text-[15px] font-bold text-white"
-    >
+    <LineLoginLink href="/login?next=/order" size="sm">
       LINE 登入
-    </Link>
+    </LineLoginLink>
   );
 }
 

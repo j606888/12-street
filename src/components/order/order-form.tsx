@@ -37,6 +37,7 @@ import {
   ID_PHOTO_BUCKET,
   usePhotoUploader,
 } from "./use-photo-uploader";
+import { LineIconTile } from "@/components/line-login";
 
 type Member = {
   name: string;
@@ -849,9 +850,7 @@ export function OrderForm({
             href="/login?next=/order"
             className="flex min-h-13 items-center gap-3 rounded-[14px] bg-green-50 px-4 py-2.5 text-[15px] leading-snug text-green-900"
           >
-            <span className="bg-line-green grid size-9 shrink-0 place-items-center rounded-lg text-[11px] font-bold text-white">
-              LINE
-            </span>
+            <LineIconTile />
             <span>
               <strong>用 LINE 登入</strong>，以後可以查以前的訂單
             </span>

@@ -32,6 +32,8 @@ pnpm db:seed             # 尺寸、價格、周邊商品、管理員
 ## 前台設計慣例
 設計稿：https://claude.ai/artifact/VC6Bfeoxvj5JXsP2tHpVLZ （最下排「通用版」）。後台有自己的色票（`--color-admin-*`）和字體，不受這一節影響。
 - 色票一律用 `globals.css` 的 token，不寫死 hex：底 `background` #f3f5f6、字 `foreground` #2b3440、次要字 `muted` #5a6672、線 `line` #dde2e6、淡底 `subtle` #e6ebef、主色 `brand` #4f6e89、主色深 `brand-dark` #3d586f（連結、主色文字）、主色淡底 `brand-tint` #e9eff3／`brand-soft` #dfe7ed、控制項外框 `field` #b9c4cd
+- Logo：`src/components/shop-logo.tsx`（酒紅手繪愛心＋「12 Street 影像生活工場」），`logo-wine`／`logo-grey` 只給 logo 用，不拿來做 UI；改愛心路徑時同步 `src/app/icon.svg`、`favicon.ico`、`apple-icon.png`
+- LINE 登入按鈕一律用 `src/components/line-login.tsx`（官方綠 #06C755＋官方圖示，依 LINE 按鈕規範，不可改色或換圖示）
 - 字體：DM Sans + Noto Sans TC；粗體最多用到 `font-bold`（700）
 - 字級：頁標題 28、區塊標題 20、內文與按鈕 17–18、次要說明 15–16、標籤最小 13；金額 26 粗體＋`tabular-nums`
 - 卡片：白底、1px `line`、圓角 16（`rounded-2xl`）；選中狀態用 `brand` 外框＋`brand-tint` 底

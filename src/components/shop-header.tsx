@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { CameraIcon } from "@/components/icons";
-import { SHOP } from "@/lib/shop-info";
+import { ShopLogo } from "@/components/shop-logo";
 
 /** Brand bar on top of the shop pages; `children` goes on the right. */
 export function ShopHeader({
@@ -18,13 +17,12 @@ export function ShopHeader({
           wide ? "max-w-6xl sm:px-6" : "max-w-3xl"
         }`}
       >
-        <Link href="/" className="flex min-w-0 flex-1 items-center gap-3">
-          <span className="bg-brand grid size-10 shrink-0 place-items-center rounded-xl text-white">
-            <CameraIcon className="size-5.5" />
-          </span>
-          <span className="truncate text-[17px] leading-tight font-bold">
-            {SHOP.name}
-          </span>
+        <Link
+          href="/"
+          aria-label="12 Street 影像生活工場 首頁"
+          className="flex min-h-11 min-w-0 flex-1 items-center"
+        >
+          <ShopLogo />
         </Link>
         {children}
       </div>
