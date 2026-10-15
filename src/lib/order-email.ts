@@ -1,6 +1,7 @@
 // Plain-text notification emails sent to the customer as an order moves along.
 
 import { formatNtd } from "./format";
+import { SHOP } from "./shop-info";
 
 export type OrderEmailKind = "submitted" | "paid" | "ready" | "cancelled";
 
@@ -13,7 +14,7 @@ export type OrderEmailData = {
   orderUrl: string;
 };
 
-const SHOP_NAME = "十二街寫真攝影館";
+const SHOP_NAME = SHOP.name;
 
 const SUBJECT: Record<OrderEmailKind, string> = {
   submitted: "已收到您的訂單",

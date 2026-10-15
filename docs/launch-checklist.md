@@ -109,7 +109,7 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 
 - [ ] 在瀏覽器同意 Resend 的 Marketplace 條款後，執行 `vercel integration add resend --no-claim --no-env-pull`（會把 `RESEND_API_KEY` 加到 Vercel 專案）
 - [ ] 在 Resend 後台新增網域 `12-street.com`，把它給的 DNS 記錄（DKIM、SPF）加到 Route 53，等驗證通過
-- [ ] 在 Vercel 設定 `EMAIL_FROM`（例如 `十二街寫真攝影館 <noreply@12-street.com>`）和 `EMAIL_REPLY_TO`（店家實際收信的信箱；網域本身沒有收信信箱）
+- [ ] 在 Vercel 設定 `EMAIL_FROM`（例如 `十二街影像生活館 <noreply@12-street.com>`）和 `EMAIL_REPLY_TO`（店家實際收信的信箱；網域本身沒有收信信箱）
 - [ ] `RESEND_API_KEY` 或 `EMAIL_FROM` 沒設時不會寄信，也不會報錯
 - 寄信時機：訂單成立、轉帳款項確認（待確認 → 已付款）、可取件、訂單取消。訂單沒有 Email（會員沒填）就不寄
 

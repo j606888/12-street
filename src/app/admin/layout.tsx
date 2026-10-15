@@ -31,7 +31,7 @@ export default function AdminLayout({ children }: LayoutProps<"/admin">) {
             12
           </span>
           <span className="grid">
-            <span className="text-[15px] font-bold">十二街寫真</span>
+            <span className="text-[15px] font-bold">十二街影像生活館</span>
             <span className="text-ink-4 text-xs">洗照片後台</span>
           </span>
         </Link>

@@ -12,7 +12,7 @@ const order = {
 describe("buildOrderEmail", () => {
   it("puts the order number in the subject", () => {
     expect(buildOrderEmail("ready", order).subject).toBe(
-      "【十二街寫真攝影館】照片好了，可以來取件囉（P20261012-0001）",
+      "【十二街影像生活館】照片好了，可以來取件囉（P20261012-0001）",
     );
   });
 

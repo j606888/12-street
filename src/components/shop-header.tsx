@@ -19,7 +19,7 @@ export function ShopHeader({
       >
         <Link
           href="/"
-          aria-label="12 Street 影像生活工場 首頁"
+          aria-label="十二街影像生活館 首頁"
           className="flex min-h-11 min-w-0 flex-1 items-center"
         >
           <ShopLogo />

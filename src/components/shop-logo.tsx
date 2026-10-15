@@ -31,7 +31,7 @@ export function ShopLogo() {
           1<span className="text-logo-grey">2</span> Street
         </span>
         <span className="text-muted mt-1 truncate text-[13px] tracking-[0.2em]">
-          影像生活工場
+          影像生活館
         </span>
       </span>
     </span>
