@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
+import { OrderEntryLink } from "@/components/order-entry-link";
 import { LookupForm } from "./lookup-form";
 
 export const metadata: Metadata = { title: "查詢訂單｜線上洗照片" };
@@ -21,12 +23,11 @@ export default function LookupPage() {
         </Link>
         查看。
       </p>
-      <Link
-        href="/"
-        className="text-brand-dark py-2.5 text-center text-base underline"
-      >
-        回首頁
-      </Link>
+      <Suspense fallback={<span className="h-11" />}>
+        <OrderEntryLink className="text-brand-dark py-2.5 text-center text-base underline">
+          回到下單頁
+        </OrderEntryLink>
+      </Suspense>
     </main>
   );
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
+import { OrderEntryLink } from "@/components/order-entry-link";
 
 export const metadata: Metadata = { title: "找不到頁面｜線上洗照片" };
 
@@ -12,12 +14,11 @@ export default function NotFound() {
         LINE 會員。
       </p>
       <div className="grid gap-3">
-        <Link
-          href="/"
-          className="bg-brand hover:bg-brand-dark flex h-13.5 items-center justify-center rounded-[14px] px-4 text-lg font-bold text-white"
-        >
-          回首頁
-        </Link>
+        <Suspense fallback={<span className="h-13.5" />}>
+          <OrderEntryLink className="bg-brand hover:bg-brand-dark flex h-13.5 items-center justify-center rounded-[14px] px-4 text-lg font-bold text-white">
+            回到下單頁
+          </OrderEntryLink>
+        </Suspense>
         <Link
           href="/orders/lookup"
           className="text-brand-dark py-2.5 text-base underline"

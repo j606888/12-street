@@ -22,10 +22,10 @@ export default function MyOrdersPage() {
         <OrderList />
       </Suspense>
       <Link
-        href="/"
+        href="/order"
         className="text-brand-dark py-2.5 text-center text-base underline"
       >
-        回首頁
+        回到下單頁
       </Link>
       <SignOutButton className="text-muted py-2.5 text-center text-base underline" />
     </main>

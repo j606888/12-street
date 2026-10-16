@@ -16,7 +16,7 @@ export default function ErrorPage({ retry }: { retry: () => void }) {
           重試
         </button>
         <Link href="/" className="text-brand-dark py-2.5 text-base underline">
-          回首頁
+          回到下單頁
         </Link>
       </div>
     </main>

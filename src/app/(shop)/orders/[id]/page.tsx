@@ -51,8 +51,11 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
             查詢其他訂單
           </Link>
         )}
-        <Link href="/" className="py-2.5 underline">
-          回首頁
+        <Link
+          href={order.userId ? "/order" : "/guest"}
+          className="py-2.5 underline"
+        >
+          回到下單頁
         </Link>
       </nav>
     </>
