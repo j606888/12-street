@@ -1,7 +1,13 @@
 "use client";
 
 import { useImperativeHandle, useMemo, useRef, useState } from "react";
-import { MinusIcon, PlusIcon, UploadIcon, XIcon } from "@/components/icons";
+import {
+  ChevronDownIcon,
+  MinusIcon,
+  PlusIcon,
+  UploadIcon,
+  XIcon,
+} from "@/components/icons";
 import { MAX_QUANTITY } from "@/lib/validators/order";
 import type { Entry, Notice, PhotoUploader } from "./use-photo-uploader";
 
@@ -274,28 +280,40 @@ export function PhotoBucket({
                   />
                 )}
                 {idPhotoSets && (
-                  <select
-                    value={e.productId ?? ""}
-                    onChange={(ev) =>
-                      uploader.setIdPhotoSet(
-                        [e.localId],
-                        Number(ev.target.value),
-                      )
-                    }
-                    aria-label={`${e.fileName} 證件照種類`}
-                    className="border-field bg-card focus:outline-brand mx-1 mt-1 mb-1.5 h-11 min-w-0 rounded-xl border-2 px-2 text-[15px] font-bold focus:outline-2 focus:outline-offset-1"
-                  >
-                    {e.productId === undefined && (
-                      <option value="" disabled>
-                        選種類
-                      </option>
-                    )}
-                    {idPhotoSets.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  // A native select can't wrap long names in a narrow tile, so
+                  // show the name in a wrapping label and lay the select over it
+                  <div className="border-field bg-card focus-within:outline-brand relative mx-1 mt-1 mb-1.5 flex min-h-11 items-center gap-1 rounded-xl border-2 py-1.5 pr-1.5 pl-2.5 focus-within:outline-2 focus-within:outline-offset-1">
+                    <span
+                      aria-hidden="true"
+                      className="min-w-0 flex-1 text-[15px] leading-snug font-bold"
+                    >
+                      {idPhotoSets.find((s) => s.id === e.productId)?.name ??
+                        "選種類"}
+                    </span>
+                    <ChevronDownIcon className="text-muted size-4 shrink-0" />
+                    <select
+                      value={e.productId ?? ""}
+                      onChange={(ev) =>
+                        uploader.setIdPhotoSet(
+                          [e.localId],
+                          Number(ev.target.value),
+                        )
+                      }
+                      aria-label={`${e.fileName} 證件照種類`}
+                      className="absolute inset-0 size-full cursor-pointer opacity-0"
+                    >
+                      {e.productId === undefined && (
+                        <option value="" disabled>
+                          選種類
+                        </option>
+                      )}
+                      {idPhotoSets.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
               </div>
               <RowStatus
