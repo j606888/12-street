@@ -19,7 +19,10 @@ export function proxy(request: NextRequest) {
         return NextResponse.redirect(url);
       }
     }
-    return NextResponse.next();
+    // There is no landing page; keep the query for liff.init() on /order
+    const url = request.nextUrl.clone();
+    url.pathname = "/order";
+    return NextResponse.redirect(url);
   }
 
   // Optimistic check only: admin role is verified again in every admin page/action.
@@ -32,5 +35,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*", "/orders/mine"],
+  // /order is members only; guests order through /guest
+  matcher: ["/", "/order", "/admin/:path*", "/orders/mine"],
 };

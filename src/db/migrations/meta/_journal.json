@@ -43,6 +43,13 @@
       "when": 1791797767667,
       "tag": "0005_right_hannibal_king",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792140509786,
+      "tag": "0006_flat_venus",
+      "breakpoints": true
     }
   ]
 }

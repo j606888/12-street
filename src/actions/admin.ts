@@ -15,6 +15,7 @@ import {
   orderIdInput,
   orderPhotoInput,
   removeMemberTagInput,
+  setMemberRoleInput,
   updateMemberInput,
   updateMemberNoteInput,
   updateOrderStatusInput,
@@ -53,20 +54,31 @@ const submitted = (orderId: string) =>
   and(eq(orders.id, orderId), ne(orders.status, "draft"));
 
 export async function updateOrderStatus(input: unknown): Promise<Result> {
-  if (!(await getAdmin())) return FORBIDDEN;
+  const admin = await getAdmin();
+  if (!admin) return FORBIDDEN;
   const { data, error } = parse(updateOrderStatusInput, input);
   if (!data) return { ok: false, error };
+  if (data.markPaid && data.status !== "picked_up")
+    return { ok: false, error: "只有取件時可以一起收款" };
 
   const previous = await db.transaction(async (tx) => {
     const [order] = await tx
-      .select({ status: orders.status })
+      .select({ status: orders.status, paymentStatus: orders.paymentStatus })
       .from(orders)
       .where(submitted(data.orderId))
       .for("update");
     if (!order) return null;
+    const pay = data.markPaid && order.paymentStatus !== "paid";
     await tx
       .update(orders)
-      .set({ status: data.status })
+      .set({
+        status: data.status,
+        ...(pay && {
+          paymentStatus: "paid" as const,
+          paidAt: new Date(),
+          paidById: admin.id,
+        }),
+      })
       .where(eq(orders.id, data.orderId));
     return order.status;
   });
@@ -80,7 +92,8 @@ export async function updateOrderStatus(input: unknown): Promise<Result> {
 }
 
 export async function updatePaymentStatus(input: unknown): Promise<Result> {
-  if (!(await getAdmin())) return FORBIDDEN;
+  const admin = await getAdmin();
+  if (!admin) return FORBIDDEN;
   const { data, error } = parse(updatePaymentStatusInput, input);
   if (!data) return { ok: false, error };
 
@@ -91,11 +104,15 @@ export async function updatePaymentStatus(input: unknown): Promise<Result> {
       .where(submitted(data.orderId))
       .for("update");
     if (!order) return null;
+    // Re-saving 已付款 keeps who confirmed it first
+    if (order.paymentStatus === data.paymentStatus) return order.paymentStatus;
+    const paid = data.paymentStatus === "paid";
     await tx
       .update(orders)
       .set({
         paymentStatus: data.paymentStatus,
-        paidAt: data.paymentStatus === "paid" ? new Date() : null,
+        paidAt: paid ? new Date() : null,
+        paidById: paid ? admin.id : null,
       })
       .where(eq(orders.id, data.orderId));
     return order.paymentStatus;
@@ -262,6 +279,25 @@ export async function updateMember(input: unknown): Promise<Result> {
   const updated = await db
     .update(user)
     .set({ name: data.name, phone: data.phone })
+    .where(eq(user.id, data.userId))
+    .returning({ id: user.id });
+  if (!updated.length) return NO_MEMBER;
+  refresh();
+  return { ok: true };
+}
+
+/** Makes a member an admin or back to a customer; nobody can drop their own admin role. */
+export async function setMemberRole(input: unknown): Promise<Result> {
+  const admin = await getAdmin();
+  if (!admin) return FORBIDDEN;
+  const { data, error } = parse(setMemberRoleInput, input);
+  if (!data) return { ok: false, error };
+  if (data.userId === admin.id && data.role !== "admin")
+    return { ok: false, error: "不能取消自己的管理員權限，要取消請找其他管理員" };
+
+  const updated = await db
+    .update(user)
+    .set({ role: data.role })
     .where(eq(user.id, data.userId))
     .returning({ id: user.id });
   if (!updated.length) return NO_MEMBER;

@@ -15,7 +15,8 @@ const NEXT: Partial<Record<OrderStatus, [OrderStatus, string]>> = {
 
 /**
  * Moves the order one step along 已送出 → 製作中 → 可取件 → 已取件. Starting
- * production before a non-cash payment is confirmed asks first.
+ * production before a non-cash payment is confirmed asks first; picking up an
+ * unpaid order offers 取件並收款 so the payment is confirmed in the same click.
  */
 export function AdvanceStatusButton({
   orderId,
@@ -42,10 +43,16 @@ export function AdvanceStatusButton({
     paymentMethod !== "cash_on_pickup" &&
     paymentStatus !== "paid";
 
-  function save() {
+  const collectPayment = target === "picked_up" && paymentStatus !== "paid";
+
+  function save(markPaid?: boolean) {
     setError(null);
     startTransition(async () => {
-      const res = await updateOrderStatus({ orderId, status: target });
+      const res = await updateOrderStatus({
+        orderId,
+        status: target,
+        markPaid,
+      });
       setConfirming(false);
       if (!res.ok) setError(res.error);
     });
@@ -64,7 +71,7 @@ export function AdvanceStatusButton({
           </span>
           <button
             type="button"
-            onClick={save}
+            onClick={() => save()}
             disabled={pending}
             className={btn.primary}
           >
@@ -77,6 +84,25 @@ export function AdvanceStatusButton({
             className={btn.secondary}
           >
             取消
+          </button>
+        </span>
+      ) : collectPayment ? (
+        <span className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => save()}
+            disabled={pending}
+            className={`${btn.secondary} ${big}`}
+          >
+            只取件
+          </button>
+          <button
+            type="button"
+            onClick={() => save(true)}
+            disabled={pending}
+            className={`${btn.primary} ${big}`}
+          >
+            {pending ? "儲存中…" : "取件並收款"}
           </button>
         </span>
       ) : (

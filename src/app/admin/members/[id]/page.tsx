@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MemberNoteForm } from "@/components/admin/member-note-form";
 import { MemberProfileForm } from "@/components/admin/member-profile-form";
+import { MemberRoleForm } from "@/components/admin/member-role-form";
 import { MemberTags, TagOptions } from "@/components/admin/member-tags";
 import {
   OrderStatusBadge,
@@ -41,7 +42,7 @@ export default function AdminMemberPage({
 async function AdminMember({
   params,
 }: Pick<PageProps<"/admin/members/[id]">, "params">) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const { id } = await params;
   if (id.length > 64) notFound();
 
@@ -81,6 +82,14 @@ async function AdminMember({
               userId={member.id}
               name={member.name}
               phone={member.phone}
+            />
+          </Card>
+          <Card title="權限">
+            <MemberRoleForm
+              key={member.role}
+              userId={member.id}
+              isAdmin={member.role === "admin"}
+              isSelf={member.id === admin.id}
             />
           </Card>
           <Card title="標籤">

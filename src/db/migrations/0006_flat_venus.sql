@@ -1,0 +1,2 @@
+ALTER TABLE "orders" ADD COLUMN "paid_by_id" text;--> statement-breakpoint
+ALTER TABLE "orders" ADD CONSTRAINT "orders_paid_by_id_user_id_fk" FOREIGN KEY ("paid_by_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;

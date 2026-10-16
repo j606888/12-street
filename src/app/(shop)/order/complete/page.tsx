@@ -63,7 +63,14 @@ async function OrderSummary({
 
       <div className="bg-subtle grid gap-1 rounded-2xl px-5 py-4 text-[17px]">
         <p className="font-bold">{SHOP.name}</p>
-        <p>{SHOP.address}</p>
+        <a
+          href={SHOP.mapUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-brand-dark -my-2.5 flex min-h-11 w-fit items-center font-bold underline underline-offset-4"
+        >
+          {SHOP.address}
+        </a>
         {SHOP.hours.map((line) => (
           <p key={line}>{line}</p>
         ))}
@@ -79,10 +86,10 @@ async function OrderSummary({
           查訂單
         </Link>
         <Link
-          href="/"
+          href={order.userId ? "/order" : "/guest"}
           className="bg-card border-field flex h-13.5 items-center justify-center rounded-[14px] border-2 text-[17px] font-bold"
         >
-          回首頁
+          再下一筆訂單
         </Link>
       </nav>
       <p className="text-muted text-center text-[15px]">

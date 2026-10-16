@@ -64,6 +64,8 @@ export const orderPhotoInput = z.object({ orderId, photoId: z.uuid() });
 export const updateOrderStatusInput = z.object({
   orderId,
   status: z.enum(ADMIN_ORDER_STATUSES),
+  // 取件時順便收款: also mark the order paid in the same step
+  markPaid: z.boolean().optional(),
 });
 export const updatePaymentStatusInput = z.object({
   orderId,
@@ -77,6 +79,10 @@ export const addMemberTagInput = z.object({
     .min(1, "請輸入標籤")
     .max(20, "標籤最多 20 個字")
     .regex(/^[^\r\n\t]+$/, "標籤不能換行"),
+});
+export const setMemberRoleInput = z.object({
+  userId,
+  role: z.enum(["customer", "admin"]),
 });
 export const removeMemberTagInput = z.object({
   userId,

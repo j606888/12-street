@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { LineButtonContent, lineButtonClass } from "@/components/line-login";
 
@@ -25,12 +24,6 @@ export function LoginButtons({ next }: { next: string }) {
           {pending ? "前往 LINE…" : "用 LINE 登入"}
         </LineButtonContent>
       </button>
-      <Link
-        href="/order"
-        className="bg-card border-field flex h-13.5 items-center justify-center rounded-[14px] border-2 px-6 text-[17px] font-bold"
-      >
-        不登入，直接下單
-      </Link>
     </div>
   );
 }

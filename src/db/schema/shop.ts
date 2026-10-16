@@ -95,6 +95,10 @@ export const orders = pgTable(
     totalAmount: integer("total_amount").notNull().default(0),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     paidAt: timestamp("paid_at", { withTimezone: true }),
+    // Admin who marked the order paid
+    paidById: text("paid_by_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     ...timestamps,
   },
   (t) => [

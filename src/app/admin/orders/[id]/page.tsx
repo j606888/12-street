@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   AdvanceStatusButton,
@@ -119,13 +120,19 @@ async function AdminOrder({
   const id = z.uuid().safeParse((await params).id);
   if (!id.success) notFound();
 
+  const paidBy = alias(user, "paid_by");
   const [row] = await db
-    .select({ order: orders, member: { id: user.id, name: user.name } })
+    .select({
+      order: orders,
+      member: { id: user.id, name: user.name },
+      paidByName: paidBy.name,
+    })
     .from(orders)
     .leftJoin(user, eq(user.id, orders.userId))
+    .leftJoin(paidBy, eq(paidBy.id, orders.paidById))
     .where(eq(orders.id, id.data));
   if (!row || row.order.status === "draft") notFound();
-  const { order, member } = row;
+  const { order, member, paidByName } = row;
 
   const [photoList, allTags, memberTags, note, proofUrl] = await Promise.all([
     loadOrderPhotos(order.id),
@@ -300,7 +307,10 @@ async function AdminOrder({
               <PaymentReview
                 orderId={order.id}
                 status={order.paymentStatus}
-                paidAtLabel={order.paidAt && formatTaipeiTime(order.paidAt)}
+                paidAtLabel={
+                  order.paidAt &&
+                  `${formatTaipeiTime(order.paidAt)}${paidByName ? `（${paidByName}）` : ""}`
+                }
               />
             </div>
           </Card>

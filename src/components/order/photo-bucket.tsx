@@ -27,6 +27,7 @@ export function PhotoBucket({
   uploader,
   quantityUnit,
   laminationPrice,
+  idPhotoSets,
   onRemoveAll,
 }: {
   ref?: React.Ref<PhotoBucketHandle>;
@@ -38,6 +39,8 @@ export function PhotoBucket({
   quantityUnit?: "張" | "組";
   /** Per-print lamination (護貝) price; pass it to let each photo pick how many prints to laminate. */
   laminationPrice?: number;
+  /** ID-photo sets (證件照); pass them to let each photo pick its own set. */
+  idPhotoSets?: { id: number; name: string }[];
   /** Offer a confirmed "remove every photo" next to the count. */
   onRemoveAll?: () => void;
 }) {
@@ -269,6 +272,30 @@ export function PhotoBucket({
                     minusLabel="少護貝一張"
                     plusLabel="多護貝一張"
                   />
+                )}
+                {idPhotoSets && (
+                  <select
+                    value={e.productId ?? ""}
+                    onChange={(ev) =>
+                      uploader.setIdPhotoSet(
+                        [e.localId],
+                        Number(ev.target.value),
+                      )
+                    }
+                    aria-label={`${e.fileName} 證件照種類`}
+                    className="border-field bg-card focus:outline-brand mx-1 mt-1 mb-1.5 h-11 min-w-0 rounded-xl border-2 px-2 text-[15px] font-bold focus:outline-2 focus:outline-offset-1"
+                  >
+                    {e.productId === undefined && (
+                      <option value="" disabled>
+                        選種類
+                      </option>
+                    )}
+                    {idPhotoSets.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
                 )}
               </div>
               <RowStatus

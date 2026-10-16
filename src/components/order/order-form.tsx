@@ -94,7 +94,7 @@ export function OrderForm({
   draft: DraftView | null;
   member: Member;
 }) {
-  // One ID-photo set for the whole order; new uploads pick it up as their default
+  // ID-photo set new uploads start with; each photo can switch to another
   const [idSetId, setIdSetId] = useState(
     () => draft?.idPhotos[0]?.productId ?? catalog.idPhotoSets[0]?.id,
   );
@@ -389,9 +389,7 @@ export function OrderForm({
 
   // ---- 選尺寸（也是整筆訂單的總覽） ----
   if (screen === "pick") {
-    const minimumSizes = catalog.sizes
-      .filter((s) => s.price < MIN_GROUP_CHARGE)
-      .map((s) => s.label);
+    const minimumNote = minimumChargeNote(catalog.sizes);
     const printsBySize = new Map<number, number>();
     for (const g of groupLines)
       printsBySize.set(
@@ -440,6 +438,11 @@ export function OrderForm({
 
           <section className="grid gap-2.5">
             {hasContent && <h2 className={h2Class}>再洗別的尺寸</h2>}
+            {minimumNote && (
+              <p className="bg-brand-tint text-brand-dark rounded-[14px] px-4 py-3 text-base font-bold">
+                {minimumNote}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-2.5 pt-1.5 sm:grid-cols-4">
               {catalog.sizes.map((s) => {
                 const picked = printsBySize.get(s.id) ?? 0;
@@ -473,11 +476,6 @@ export function OrderForm({
                 );
               })}
             </div>
-            {minimumSizes.length > 0 && (
-              <p className="text-muted text-[15px]">
-                {minimumSizes.join("、")} 只洗一張時收 ${MIN_GROUP_CHARGE}。
-              </p>
-            )}
           </section>
 
           <section className="grid gap-2.5">
@@ -631,6 +629,12 @@ export function OrderForm({
   // ---- 證件照 ----
   if (screen === "id_photo") {
     const hasPhotos = idPhotoEntries.length > 0;
+    // The set every photo shares (or the one new photos get); none when they differ
+    const sharedIdSet = hasPhotos
+      ? idPhotoEntries.every((e) => e.productId === idPhotoEntries[0].productId)
+        ? idPhotoEntries[0].productId
+        : undefined
+      : idSetId;
     return (
       <div className={`${narrowClass} gap-4`}>
         <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
@@ -640,13 +644,20 @@ export function OrderForm({
           price={`一組 $${catalog.idPhotoSets[0]?.price ?? 0}`}
         />
 
-        <h2 className={h2Class}>要哪一種？</h2>
+        <div className="grid gap-1">
+          <h2 className={h2Class}>
+            {idPhotoEntries.length > 1 ? "全部改成哪一種？" : "要哪一種？"}
+          </h2>
+          <p className="text-muted text-[15px]">
+            每張照片可以選不同種，在照片下面改。
+          </p>
+        </div>
         <div className="grid gap-2.5 sm:grid-cols-2">
           {catalog.idPhotoSets.map((set) => (
             <ChoiceCard
               key={set.id}
               name="idPhotoSet"
-              checked={set.id === idSetId}
+              checked={set.id === sharedIdSet}
               onSelect={() => pickIdSet(set.id)}
               title={set.name.replace(/^證件照：/, "")}
               desc={set.description?.split("、").slice(0, 2).join("、")}
@@ -661,6 +672,10 @@ export function OrderForm({
           notices={notices.filter((n) => n.bucket === ID_PHOTO_BUCKET)}
           uploader={uploader}
           quantityUnit="組"
+          idPhotoSets={catalog.idPhotoSets.map((s) => ({
+            id: s.id,
+            name: s.name.replace(/^證件照：/, ""),
+          }))}
         />
         <BottomBar
           caption={`證件照 共 ${idSets} 組`}
@@ -961,6 +976,30 @@ const inputBase =
   "w-full rounded-[14px] border-2 border-field bg-card px-4 font-medium placeholder:text-muted/70 focus:outline-2 focus:outline-offset-1 focus:outline-brand aria-invalid:border-red-600 aria-invalid:focus:outline-red-600";
 const inputClass = `${inputBase} h-13.5 text-lg`;
 const textareaClass = `${inputBase} py-3 text-lg leading-normal`;
+
+/** 低消 note for the sizes whose single print or lamination costs less than the minimum. */
+function minimumChargeNote(
+  sizes: { label: string; price: number; laminationPrice: number }[],
+) {
+  const cheapPrint = sizes.filter((s) => s.price < MIN_GROUP_CHARGE);
+  const cheapLam = sizes.filter(
+    (s) => s.laminationPrice > 0 && s.laminationPrice < MIN_GROUP_CHARGE,
+  );
+  if (!cheapPrint.length && !cheapLam.length) return null;
+  const same =
+    cheapPrint.length === cheapLam.length &&
+    cheapPrint.every((s, i) => s === cheapLam[i]);
+  const labels = (list: typeof sizes) => list.map((s) => s.label).join("、");
+  if (same)
+    return `${labels(cheapPrint)}：只洗一張或只護貝一張時，收 $${MIN_GROUP_CHARGE}`;
+  return [
+    cheapPrint.length &&
+      `${labels(cheapPrint)}：只洗一張收 $${MIN_GROUP_CHARGE}`,
+    cheapLam.length && `${labels(cheapLam)}：只護貝一張收 $${MIN_GROUP_CHARGE}`,
+  ]
+    .filter(Boolean)
+    .join("；");
+}
 
 /** How many more prints this group can add before its printing charge goes up (低消). */
 function freeExtraPrints(g: {
@@ -1476,7 +1515,7 @@ function Field({
       <span>
         {label}
         {optional && (
-          <span className="text-muted text-base font-medium">（可以不填）</span>
+          <span className="text-muted text-base font-medium">（選填）</span>
         )}
       </span>
       {children}
