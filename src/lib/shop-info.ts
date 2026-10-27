@@ -8,5 +8,5 @@ export const SHOP = {
   address,
   /** Opens the shop in Google Maps (app on phones). */
   mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${address}`)}`,
-  hours: ["週一至週五 12:00–21:00", "週六 12:00–17:00", "週日休息"],
+  hours: ["週一至週五 12:00–21:00", "週六、週日彈性休息（來店前可來電或官方 Line 詢問）"],
 } as const;

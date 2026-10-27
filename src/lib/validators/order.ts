@@ -76,7 +76,7 @@ export const confirmPhotosInput = z.object({
 
 /**
  * Quantity per photo (prints, or sets for ID photos), how many of those prints
- * get laminated and, for ID photos, the chosen set.
+ * get laminated and, for ID photos, the chosen set and 去背.
  */
 const photoOption = z
   .object({
@@ -84,6 +84,7 @@ const photoOption = z
     quantity,
     laminateQuantity: z.int().min(0).max(MAX_QUANTITY).default(0),
     productId: productId.optional(),
+    removeBackground: z.boolean().default(false),
   })
   .refine((v) => v.laminateQuantity <= v.quantity, {
     message: "護貝張數不能超過沖洗張數",
@@ -95,27 +96,41 @@ export const savePhotoOptionsInput = z.object({
 });
 
 export const transferProofUploadInput = z.object({
+  orderId: id,
   contentType: z.enum(["image/jpeg", "image/png"]),
   size: z.int().positive().max(MAX_PROOF_BYTES),
 });
 
-export const submitOrderInput = z
+export const PAYMENT_METHODS = [
+  "cash_on_pickup",
+  "line_money",
+  "bank_transfer",
+] as const;
+
+export const submitOrderInput = z.object({
+  contactName: z.string().trim().min(1, "請填寫姓名").max(50),
+  contactPhone: phoneSchema,
+  contactEmail: emailSchema.optional(),
+  note: z.string().trim().max(1000).optional(),
+  customNote: z.string().trim().max(2000).optional(),
+  photoOptions: z.array(photoOption).max(1000),
+  items: z
+    .array(
+      z.object({
+        productId,
+        quantity: z.int().min(0).max(MAX_QUANTITY),
+      }),
+    )
+    .max(50),
+  paymentMethod: z.enum(PAYMENT_METHODS),
+  // Placed from the in-store /guest link, which always offers cash
+  guestLink: z.boolean().optional(),
+});
+
+/** Bank transfer details the customer sends after the order is placed. */
+export const paymentProofInput = z
   .object({
-    contactName: z.string().trim().min(1, "請填寫姓名").max(50),
-    contactPhone: phoneSchema,
-    contactEmail: emailSchema.optional(),
-    note: z.string().trim().max(1000).optional(),
-    customNote: z.string().trim().max(2000).optional(),
-    photoOptions: z.array(photoOption).max(1000),
-    items: z
-      .array(
-        z.object({
-          productId,
-          quantity: z.int().min(0).max(MAX_QUANTITY),
-        }),
-      )
-      .max(50),
-    paymentMethod: z.enum(["cash_on_pickup", "line_money", "bank_transfer"]),
+    orderId: id,
     bankLast5: z
       .string()
       .trim()
@@ -123,13 +138,9 @@ export const submitOrderInput = z
       .optional(),
     transferProofKey: z.string().max(200).optional(),
   })
-  .refine(
-    (v) =>
-      v.paymentMethod !== "bank_transfer" || v.bankLast5 || v.transferProofKey,
-    {
-      message: "銀行轉帳請填寫帳號末五碼或上傳轉帳截圖",
-      path: ["bankLast5"],
-    },
-  );
+  .refine((v) => v.bankLast5 || v.transferProofKey, {
+    message: "請填寫帳號末五碼或上傳轉帳截圖",
+    path: ["bankLast5"],
+  });
 
 export type SubmitOrderInput = z.input<typeof submitOrderInput>;

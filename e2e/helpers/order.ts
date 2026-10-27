@@ -6,11 +6,11 @@ export const FIXTURES = [1, 2].map((n) =>
 );
 
 /**
- * Opens /order, starts a print group with a size button and uploads fixtures
+ * Opens /guest, starts a print group with a size button and uploads fixtures
  * into it; leaves the page on that group's screen.
  */
 export async function startOrderWithPhotos(page: Page, files: string[]) {
-  await page.goto("/order");
+  await page.goto("/guest");
   // Size buttons read "4×6 一張 $6"; pick the second one (a non-default size)
   const sizes = page.getByRole("button", { name: /一張 \$/ });
   await expect(sizes.first()).toBeVisible();

@@ -2,6 +2,7 @@
 
 import { useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
+  CheckIcon,
   ChevronDownIcon,
   MinusIcon,
   PlusIcon,
@@ -34,6 +35,7 @@ export function PhotoBucket({
   quantityUnit,
   laminationPrice,
   idPhotoSets,
+  backgroundRemovalPrice,
   onRemoveAll,
 }: {
   ref?: React.Ref<PhotoBucketHandle>;
@@ -47,6 +49,8 @@ export function PhotoBucket({
   laminationPrice?: number;
   /** ID-photo sets (證件照); pass them to let each photo pick its own set. */
   idPhotoSets?: { id: number; name: string }[];
+  /** 去背 price per photo; pass it to give each photo a 去背 checkbox. */
+  backgroundRemovalPrice?: number;
   /** Offer a confirmed "remove every photo" next to the count. */
   onRemoveAll?: () => void;
 }) {
@@ -314,6 +318,36 @@ export function PhotoBucket({
                       ))}
                     </select>
                   </div>
+                )}
+                {backgroundRemovalPrice !== undefined && (
+                  <label
+                    className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-xl pr-2 pl-2 ${
+                      e.removeBackground ? "bg-brand-tint" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={e.removeBackground}
+                      onChange={(ev) =>
+                        uploader.setRemoveBackground(
+                          [e.localId],
+                          ev.target.checked,
+                        )
+                      }
+                      aria-label={`${e.fileName} 去背，加 ${backgroundRemovalPrice} 元`}
+                      className="peer sr-only"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="border-field peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:outline-brand grid size-5.5 shrink-0 place-items-center rounded-md border-2 bg-card text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2"
+                    >
+                      {e.removeBackground && <CheckIcon className="size-4" />}
+                    </span>
+                    <span className="flex-1 text-base font-bold">去背</span>
+                    <span className="text-muted text-[15px] tabular-nums">
+                      +${backgroundRemovalPrice}
+                    </span>
+                  </label>
                 )}
               </div>
               <RowStatus

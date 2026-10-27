@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { PaymentProofForm } from "@/components/order/payment-proof-form";
 import { PAYMENT_LABEL, PaymentDetails } from "@/components/payment-details";
 import { formatNtd as fmt } from "@/lib/format";
 import {
@@ -9,13 +10,16 @@ import {
   paymentStatusTone,
 } from "@/lib/order-status";
 import { loadOrderLines, type OrderRow } from "@/lib/order-view";
-import { groupCharges } from "@/lib/pricing";
+import { groupCharges, MIN_CHARGE, printCharges } from "@/lib/pricing";
 
 /** Status, line items, contact and payment info of a submitted order. */
 export function OrderDetail({ order }: { order: OrderRow }) {
+  // Payment still to be made comes first, right under the status
+  const payFirst = awaitsPayment(order);
   return (
     <>
       <StatusSteps status={order.status} />
+      {payFirst && <PaymentSection order={order} />}
       <section className="flex flex-wrap gap-2 text-base">
         <span
           className={`rounded-full px-3 py-1 font-medium ${paymentStatusTone(order.paymentStatus)}`}
@@ -24,12 +28,12 @@ export function OrderDetail({ order }: { order: OrderRow }) {
         </span>
       </section>
 
-      <section className="grid gap-2 rounded-2xl border border-line bg-card p-4">
+      <section className="border-line bg-card grid gap-2 rounded-2xl border p-4">
         <h2 className="text-[17px] font-bold">訂單明細</h2>
         <OrderLines order={order} />
       </section>
 
-      <section className="grid gap-2 rounded-2xl border border-line bg-card p-4 text-base">
+      <section className="border-line bg-card grid gap-2 rounded-2xl border p-4 text-base">
         <h2 className="text-[17px] font-bold">聯絡資料</h2>
         <p>
           {order.contactName}・{order.contactPhone}
@@ -38,76 +42,115 @@ export function OrderDetail({ order }: { order: OrderRow }) {
           <p className="break-all">{order.contactEmail}</p>
         )}
         {order.note && (
-          <p className="whitespace-pre-line text-muted">
-            備註：{order.note}
-          </p>
+          <p className="text-muted whitespace-pre-line">備註：{order.note}</p>
         )}
       </section>
 
-      {order.paymentMethod && (
-        <section className="grid gap-2 rounded-2xl border-2 border-brand bg-card p-4 text-base">
-          <h2 className="text-[17px] font-bold">
-            付款方式：{PAYMENT_LABEL[order.paymentMethod]}
-          </h2>
-          <div className="rounded-xl bg-subtle p-4">
-            {order.paymentStatus === "paid" ? (
-              <p>店家已確認收款，謝謝！</p>
-            ) : (
-              <PaymentDetails method={order.paymentMethod} />
-            )}
-            {order.paymentStatus === "pending_review" && (
-              <p className="mt-3 text-amber-800">
-                付款待確認：已收到
-                {order.bankLast5 && (
-                  <>
-                    帳號末五碼{" "}
-                    <span className="font-mono">{order.bankLast5}</span>
-                  </>
-                )}
-                {order.bankLast5 && order.transferProofKey && "及"}
-                {order.transferProofKey && "轉帳截圖"}
-                ，店家確認入帳後會開始製作。
+      {!payFirst && <PaymentSection order={order} />}
+    </>
+  );
+}
+
+/** A LINE MONEY or bank-transfer order the customer still has to pay. */
+export function awaitsPayment(order: OrderRow) {
+  return (
+    order.paymentMethod !== null &&
+    order.paymentMethod !== "cash_on_pickup" &&
+    order.paymentStatus !== "paid" &&
+    order.status !== "cancelled"
+  );
+}
+
+/**
+ * How to pay, shown only once the order is placed: the LINE friend link or the
+ * bank account, then where to send 帳號末五碼 or a transfer screenshot.
+ */
+function PaymentSection({ order }: { order: OrderRow }) {
+  if (!order.paymentMethod) return null;
+  const transfer =
+    order.paymentMethod === "bank_transfer" && awaitsPayment(order);
+  return (
+    <section className="border-brand bg-card grid gap-2 rounded-2xl border-2 p-4 text-base">
+      <h2 className="text-[17px] font-bold">
+        付款方式：{PAYMENT_LABEL[order.paymentMethod]}
+      </h2>
+      <div className="bg-subtle grid gap-4 rounded-xl p-4">
+        {order.paymentStatus === "paid" ? (
+          <p>店家已確認收款，謝謝！</p>
+        ) : (
+          <>
+            {awaitsPayment(order) && (
+              <p>
+                應付金額{" "}
+                <span className="text-[26px] font-bold tabular-nums">
+                  {fmt(order.totalAmount)}
+                </span>
               </p>
             )}
-          </div>
-        </section>
-      )}
-    </>
+            <PaymentDetails method={order.paymentMethod} />
+            {order.paymentMethod === "line_money" && awaitsPayment(order) && (
+              <p>
+                付款時請告訴店家訂單編號{" "}
+                <span className="font-mono font-bold">{order.orderNo}</span>
+              </p>
+            )}
+          </>
+        )}
+        {transfer && (
+          <>
+            <div className="bg-line h-px" />
+            <PaymentProofForm
+              orderId={order.id}
+              sent={
+                order.paymentStatus === "pending_review"
+                  ? {
+                      bankLast5: order.bankLast5,
+                      hasProof: !!order.transferProofKey,
+                    }
+                  : null
+              }
+            />
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
 /** Line items with lamination, minimum charges, ID photos and custom work. */
 export async function OrderLines({ order }: { order: OrderRow }) {
   const { groups, items, customPhotoCount } = await loadOrderLines(order.id);
+  const priced = groups.map((g) => ({
+    unitPrice: g.unitPrice ?? 0,
+    laminationUnitPrice: g.laminationUnitPrice,
+    laminatedPrints: g.laminatedPrints,
+    quantities: [g.prints],
+  }));
+  const charged = new Map(
+    groups.map((g, i) => [g.id, groupCharges(priced[i])]),
+  );
+  const totals = printCharges(priced);
 
   return (
     <table className="w-full text-base">
       <tbody>
         {groups.map((g) => {
           const unitPrice = g.unitPrice ?? 0;
-          const c = groupCharges({
-            unitPrice,
-            laminationUnitPrice: g.laminationUnitPrice,
-            laminatedPrints: g.laminatedPrints,
-            quantities: [g.prints],
-          });
+          const c = charged.get(g.id)!;
           return (
             <Fragment key={g.id}>
-              <tr className="border-b border-line">
+              <tr className="border-line border-b">
                 <td className="py-2">{g.label}</td>
-                <td className="py-2 text-muted">
+                <td className="text-muted py-2">
                   {g.photoCount} 張照片，共印 {g.prints} 張 × {fmt(unitPrice)}
-                  {c.printing > unitPrice * g.prints && "（未滿低消）"}
                 </td>
                 <td className="py-2 text-right">{fmt(c.printing)}</td>
               </tr>
               {g.laminationUnitPrice !== null && (
-                <tr className="border-b border-line">
+                <tr className="border-line border-b">
                   <td className="py-2 pl-4">護貝</td>
-                  <td className="py-2 text-muted">
+                  <td className="text-muted py-2">
                     {g.laminatedPrints} 張 × {fmt(g.laminationUnitPrice)}
-                    {c.lamination > g.laminationUnitPrice * g.laminatedPrints &&
-                      "（未滿低消）"}
                   </td>
                   <td className="py-2 text-right">{fmt(c.lamination)}</td>
                 </tr>
@@ -115,25 +158,44 @@ export async function OrderLines({ order }: { order: OrderRow }) {
             </Fragment>
           );
         })}
+        {totals.printingTopUp > 0 && (
+          <MinimumRow what="洗照片" amount={totals.printingTopUp} />
+        )}
+        {totals.laminationTopUp > 0 && (
+          <MinimumRow what="護貝" amount={totals.laminationTopUp} />
+        )}
         {items.map((i) => (
-          <tr key={i.id} className="border-b border-line">
-            <td className="py-2">{i.name}</td>
-            <td className="py-2 text-muted">
-              {i.quantity} {i.photoId ? "組" : "個"} × {fmt(i.unitPrice)}
-            </td>
-            <td className="py-2 text-right">{fmt(i.unitPrice * i.quantity)}</td>
-          </tr>
+          <Fragment key={i.id}>
+            <tr className="border-line border-b">
+              <td className="py-2">{i.name}</td>
+              <td className="text-muted py-2">
+                {i.quantity} {i.photoId ? "組" : "個"} × {fmt(i.unitPrice)}
+              </td>
+              <td className="py-2 text-right">
+                {fmt(i.unitPrice * i.quantity)}
+              </td>
+            </tr>
+            {i.backgroundRemovalPrice != null && (
+              <tr className="border-line border-b">
+                <td className="py-2 pl-4">去背</td>
+                <td className="text-muted py-2">1 張</td>
+                <td className="py-2 text-right">
+                  {fmt(i.backgroundRemovalPrice)}
+                </td>
+              </tr>
+            )}
+          </Fragment>
         ))}
         {(customPhotoCount > 0 || order.customNote) && (
-          <tr className="border-b border-line">
+          <tr className="border-line border-b">
             <td className="py-2">客製化製作</td>
-            <td className="py-2 text-muted">
+            <td className="text-muted py-2">
               {customPhotoCount} 張照片
               {order.customNote && (
                 <p className="whitespace-pre-line">{order.customNote}</p>
               )}
             </td>
-            <td className="py-2 text-right text-muted">另行報價</td>
+            <td className="text-muted py-2 text-right">另行報價</td>
           </tr>
         )}
       </tbody>
@@ -146,6 +208,19 @@ export async function OrderLines({ order }: { order: OrderRow }) {
         </tr>
       </tfoot>
     </table>
+  );
+}
+
+/** 低消 top-up across all sizes of the order. */
+function MinimumRow({ what, amount }: { what: string; amount: number }) {
+  return (
+    <tr className="border-line border-b">
+      <td className="py-2">低消補差額</td>
+      <td className="text-muted py-2">
+        {what}合計未滿 {fmt(MIN_CHARGE)}
+      </td>
+      <td className="py-2 text-right">{fmt(amount)}</td>
+    </tr>
   );
 }
 
@@ -166,7 +241,7 @@ function StatusSteps({ status }: { status: OrderStatus }) {
   return (
     <section
       aria-label={`訂單狀態：${ORDER_STATUS_LABEL[status]}`}
-      className="rounded-2xl border border-line bg-card p-4"
+      className="border-line bg-card rounded-2xl border p-4"
     >
       <ol className="grid grid-cols-3 gap-1 text-center">
         {STEPS.map((s, i) => (

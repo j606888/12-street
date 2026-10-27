@@ -4,9 +4,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { CheckIcon } from "@/components/icons";
-import { OrderDetail } from "@/components/order/order-detail";
+import { LiffOrderMessage } from "@/components/liff-order-message";
+import { awaitsPayment, OrderDetail } from "@/components/order/order-detail";
+import { PAYMENT_LABEL } from "@/components/payment-details";
 import { ShopHeader } from "@/components/shop-header";
-import { formatTaipeiTime } from "@/lib/format";
+import { formatNtd, formatTaipeiTime } from "@/lib/format";
 import { findViewableOrder } from "@/lib/order-view";
 import { SHOP } from "@/lib/shop-info";
 
@@ -34,15 +36,34 @@ async function OrderSummary({
   if (!id.success) notFound();
   const order = await findViewableOrder(id.data);
   if (!order) notFound();
+  const pay = awaitsPayment(order);
 
   return (
     <>
+      {order.orderNo && (
+        <LiffOrderMessage
+          orderNo={order.orderNo}
+          text={[
+            "訂單成立",
+            `訂單編號：${order.orderNo}`,
+            `金額：${formatNtd(order.totalAmount)}`,
+            order.paymentMethod &&
+              `付款方式：${PAYMENT_LABEL[order.paymentMethod]}`,
+          ]
+            .filter(Boolean)
+            .join("\n")}
+        />
+      )}
       <div className="grid justify-items-center gap-3 text-center">
         <span className="bg-line-green grid size-16 place-items-center rounded-full text-white">
           <CheckIcon className="size-9" />
         </span>
         <h1 className="text-[28px] leading-tight font-bold">訂單送出了</h1>
-        <p className="text-muted text-lg">洗好後，請到店裡拿照片。</p>
+        <p className="text-muted text-lg">
+          {pay
+            ? "請照下面的說明付款，洗好後到店裡拿照片。"
+            : "洗好後，請到店裡拿照片。"}
+        </p>
       </div>
 
       <div className="border-line bg-card overflow-hidden rounded-2xl border">
@@ -81,7 +102,12 @@ async function OrderSummary({
       <nav className="grid gap-3 sm:grid-cols-2">
         <Link
           href="/orders/lookup"
-          className="bg-brand hover:bg-brand-dark flex h-13.5 items-center justify-center rounded-[14px] text-lg font-bold text-white"
+          className={
+            // The payment section holds this screen's main action while unpaid
+            pay
+              ? "bg-card border-brand text-brand-dark flex h-13.5 items-center justify-center rounded-[14px] border-2 text-lg font-bold"
+              : "bg-brand hover:bg-brand-dark flex h-13.5 items-center justify-center rounded-[14px] text-lg font-bold text-white"
+          }
         >
           查訂單
         </Link>

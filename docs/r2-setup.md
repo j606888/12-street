@@ -44,7 +44,7 @@ Settings → Object lifecycle rules → Add rule：
 | `photos-backstop` | `photos/` | Delete objects after **35** days |
 | `transfer-proofs-backstop` | `transfer-proofs/` | Delete objects after **60** days |
 
-- 轉帳截圖是送出訂單**之前**上傳的，cron 從「送出時間」起算 30 天；客人如果草稿放很久才送出，上傳時間會更早，所以備援給 60 天，避免比 cron 先刪
+- 轉帳截圖是訂單送出**之後**才在訂單頁上傳的，cron 從「訂單送出時間」起算 30 天；備援給 60 天，也順便清掉客人上傳了卻沒按送出的截圖
 - 被 lifecycle 刪掉、但 DB 還標記為已上傳的照片，後台 ZIP 下載會失敗；這只會發生在 cron 沒在跑的時候，看到時請先檢查 cron
 
 ## Vercel Cron

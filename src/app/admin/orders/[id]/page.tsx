@@ -233,8 +233,13 @@ async function AdminOrder({
                   folder: p.folder,
                   quantity: p.quantity
                     ? `${p.quantity.n} ${p.quantity.unit}${
-                        p.quantity.laminated
+                        "laminated" in p.quantity && p.quantity.laminated
                           ? `（護貝 ${p.quantity.laminated}）`
+                          : ""
+                      }${
+                        "removeBackground" in p.quantity &&
+                        p.quantity.removeBackground
+                          ? "（去背）"
                           : ""
                       }`
                     : "—",

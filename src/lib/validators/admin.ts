@@ -84,6 +84,10 @@ export const setMemberRoleInput = z.object({
   userId,
   role: z.enum(["customer", "admin"]),
 });
+export const setMemberCashInput = z.object({
+  userId,
+  allowCash: z.boolean(),
+});
 export const removeMemberTagInput = z.object({
   userId,
   tagId: z.int().positive(),

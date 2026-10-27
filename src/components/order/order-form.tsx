@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
-import { getTransferProofUploadUrl, submitOrder } from "@/actions/order";
+import { submitOrder } from "@/actions/order";
 import {
   ArrowRightIcon,
   BookIcon,
@@ -10,27 +10,21 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   IdCardIcon,
-  ImageIcon,
 } from "@/components/icons";
 import {
   PAYMENT_LABEL,
-  PaymentDetails,
   type PaymentMethod,
 } from "@/components/payment-details";
 import type { Catalog, DraftView } from "@/lib/draft";
 import {
+  BACKGROUND_REMOVAL_PRICE,
   groupCharges,
   itemSubtotal,
-  MIN_GROUP_CHARGE,
-  minimumCharge,
+  MIN_CHARGE,
+  printCharges,
 } from "@/lib/pricing";
-import {
-  emailSchema,
-  MAX_PROOF_BYTES,
-  phoneSchema,
-} from "@/lib/validators/order";
+import { emailSchema, phoneSchema } from "@/lib/validators/order";
 import { PhotoBucket, Stepper } from "./photo-bucket";
-import { putFile } from "./upload-utils";
 import {
   CUSTOM_BUCKET,
   type Entry,
@@ -45,12 +39,6 @@ type Member = {
   email: string | null;
 } | null;
 
-type Proof =
-  | { status: "idle" }
-  | { status: "uploading"; progress: number; previewUrl: string }
-  | { status: "done"; key: string; previewUrl: string }
-  | { status: "failed"; error: string };
-
 /** Which screen of the order flow is showing; the draft itself lives on the server. */
 type View =
   | { kind: "pick" }
@@ -60,14 +48,8 @@ type View =
   | { kind: "checkout" };
 
 /** Checkout fields that can block submitting, in on-screen order. */
-type FieldKey = "content" | "name" | "phone" | "email" | "payment";
-const FIELD_ORDER: FieldKey[] = [
-  "content",
-  "name",
-  "phone",
-  "email",
-  "payment",
-];
+type FieldKey = "content" | "name" | "phone" | "email";
+const FIELD_ORDER: FieldKey[] = ["content", "name", "phone", "email"];
 type FieldErrors = Partial<Record<FieldKey, string>>;
 const fieldId = (key: FieldKey) => `checkout-${key}`;
 
@@ -89,11 +71,20 @@ export function OrderForm({
   catalog,
   draft,
   member,
+  cashAllowed,
+  guestLink,
 }: {
   catalog: Catalog;
   draft: DraftView | null;
   member: Member;
+  /** Whether 取件時付現金 is offered: always on the /guest link, per member on /order */
+  cashAllowed: boolean;
+  /** Placed from the in-store /guest link */
+  guestLink?: boolean;
 }) {
+  const paymentMethods = (Object.keys(PAYMENT_LABEL) as PaymentMethod[]).filter(
+    (m) => cashAllowed || m !== "cash_on_pickup",
+  );
   // ID-photo set new uploads start with; each photo can switch to another
   const [idSetId, setIdSetId] = useState(
     () => draft?.idPhotos[0]?.productId ?? catalog.idPhotoSets[0]?.id,
@@ -109,12 +100,9 @@ export function OrderForm({
   const [contactPhone, setContactPhone] = useState(member?.phone ?? "");
   const [contactEmail, setContactEmail] = useState(member?.email ?? "");
   const [note, setNote] = useState("");
-  const [paymentMethod, setPaymentMethod] =
-    useState<PaymentMethod>("cash_on_pickup");
-  const [bankLast5, setBankLast5] = useState("");
-  const [proof, setProof] = useState<Proof>({ status: "idle" });
-  // Bumped on every pick/remove so a stale upload can't overwrite a newer one
-  const proofAttempt = useRef(0);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    paymentMethods[0],
+  );
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, startSubmit] = useTransition();
@@ -150,21 +138,51 @@ export function OrderForm({
       laminationUnitPrice,
       laminationPrice: size?.laminationPrice ?? 0,
       ...charges,
-      printingAtMinimum: charges.printing > unitPrice * charges.prints,
-      laminationAtMinimum:
-        charges.lamination > (laminationUnitPrice ?? 0) * laminatedPrints,
     };
   });
+  // 低消 counts every size together
+  const prints = printCharges(
+    groupLines.map((g) => ({
+      unitPrice: g.unitPrice,
+      laminationUnitPrice: g.laminationUnitPrice,
+      laminatedPrints: g.laminatedPrints,
+      quantities: [g.prints],
+    })),
+  );
+  const minimumLines = [
+    prints.printingTopUp > 0 && {
+      key: "printing",
+      label: `洗照片未滿 ${fmt(MIN_CHARGE)}，補差額`,
+      amount: prints.printingTopUp,
+    },
+    prints.laminationTopUp > 0 && {
+      key: "lamination",
+      label: `護貝未滿 ${fmt(MIN_CHARGE)}，補差額`,
+      amount: prints.laminationTopUp,
+    },
+  ].filter((l) => l !== false);
   const idPhotoEntries = entries.filter((e) => e.bucket === ID_PHOTO_BUCKET);
   const idPhotoLines = catalog.idPhotoSets
     .map((set) => {
-      const sets = idPhotoEntries
-        .filter((e) => e.productId === set.id)
-        .reduce((n, e) => n + e.quantity, 0);
+      const photos = idPhotoEntries.filter((e) => e.productId === set.id);
+      const sets = photos.reduce((n, e) => n + e.quantity, 0);
+      const removals = photos.filter((e) => e.removeBackground).length;
       return {
         ...set,
         sets,
-        subtotal: itemSubtotal({ unitPrice: set.price, quantity: sets }),
+        removals,
+        subtotal: photos.reduce(
+          (sum, e) =>
+            sum +
+            itemSubtotal({
+              unitPrice: set.price,
+              quantity: e.quantity,
+              backgroundRemovalPrice: e.removeBackground
+                ? BACKGROUND_REMOVAL_PRICE
+                : null,
+            }),
+          0,
+        ),
       };
     })
     .filter((l) => l.sets > 0);
@@ -176,7 +194,7 @@ export function OrderForm({
       subtotal: itemSubtotal({ unitPrice: p.price, quantity: itemQty[p.id] }),
     }));
   const total =
-    groupLines.reduce((s, g) => s + g.total, 0) +
+    prints.total +
     idPhotoLines.reduce((s, l) => s + l.subtotal, 0) +
     itemLines.reduce((s, i) => s + i.subtotal, 0);
 
@@ -208,12 +226,6 @@ export function OrderForm({
     if (contactEmail.trim()) {
       if (!email.success) found.email = email.error.issues[0].message;
     } else if (!member) found.email = "請填寫 Email";
-    if (paymentMethod === "bank_transfer") {
-      if (proof.status === "uploading")
-        found.payment = "轉帳截圖還在上傳中，請稍等";
-      else if (!/^\d{5}$/.test(bankLast5) && proof.status !== "done")
-        found.payment = "銀行轉帳請填寫帳號末五碼，或上傳轉帳截圖";
-    }
     return found;
   }
 
@@ -254,38 +266,6 @@ export function OrderForm({
     }
   }
 
-  async function uploadProof(file: File) {
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
-      setProof({ status: "failed", error: "截圖請用 JPG 或 PNG 檔" });
-      return;
-    }
-    if (file.size > MAX_PROOF_BYTES) {
-      setProof({ status: "failed", error: "截圖檔案太大（上限 15 MB）" });
-      return;
-    }
-    const attempt = ++proofAttempt.current;
-    const current = () => attempt === proofAttempt.current;
-    const previewUrl = URL.createObjectURL(file);
-    setProof({ status: "uploading", progress: 0, previewUrl });
-    try {
-      const res = await getTransferProofUploadUrl({
-        contentType: file.type,
-        size: file.size,
-      });
-      if (!res.ok) throw new Error(res.error);
-      await putFile(res.uploadUrl, file, file.type, (progress) => {
-        if (current()) setProof({ status: "uploading", progress, previewUrl });
-      }).promise;
-      if (current()) setProof({ status: "done", key: res.key, previewUrl });
-    } catch (err) {
-      if (current())
-        setProof({
-          status: "failed",
-          error: err instanceof Error ? err.message : "上傳失敗，請再試一次",
-        });
-    }
-  }
-
   function submit() {
     setError(null);
     const found = validate();
@@ -305,20 +285,14 @@ export function OrderForm({
             quantity: e.quantity,
             laminateQuantity: e.laminateQuantity,
             productId: e.productId,
+            removeBackground: e.removeBackground,
           })),
         items: catalog.addons.map((p) => ({
           productId: p.id,
           quantity: itemQty[p.id] ?? 0,
         })),
         paymentMethod,
-        bankLast5:
-          paymentMethod === "bank_transfer" && bankLast5
-            ? bankLast5
-            : undefined,
-        transferProofKey:
-          paymentMethod === "bank_transfer" && proof.status === "done"
-            ? proof.key
-            : undefined,
+        guestLink,
       });
       // On success the action redirects to the complete page
       if (res && !res.ok) setError(res.error);
@@ -345,7 +319,6 @@ export function OrderForm({
         desc: [
           `${g.photos.length} 張照片`,
           g.laminatedPrints > 0 && `護貝 ${g.laminatedPrints} 張`,
-          (g.printingAtMinimum || g.laminationAtMinimum) && "含最低收費",
         ]
           .filter(Boolean)
           .join("・"),
@@ -356,7 +329,12 @@ export function OrderForm({
       key: `id-${l.id}`,
       photos: idPhotoEntries.filter((e) => e.productId === l.id),
       title: `證件照 ${l.sets} 組`,
-      desc: l.name.replace(/^證件照：/, ""),
+      desc: [
+        l.name.replace(/^證件照：/, ""),
+        l.removals > 0 && `去背 ${l.removals} 張`,
+      ]
+        .filter(Boolean)
+        .join("・"),
       amount: fmt(l.subtotal),
       view: { kind: "id_photo" } as const,
     })),
@@ -375,10 +353,9 @@ export function OrderForm({
         ]
       : []),
   ];
-  const prints = groupLines.reduce((n, g) => n + g.prints, 0);
   const idSets = idPhotoLines.reduce((n, l) => n + l.sets, 0);
   const orderCaption = [
-    prints > 0 && `照片 ${prints} 張`,
+    prints.prints > 0 && `照片 ${prints.prints} 張`,
     idSets > 0 && `證件照 ${idSets} 組`,
     (customEntries.length > 0 || customNote) && "客製化",
     itemLines.length > 0 &&
@@ -428,6 +405,9 @@ export function OrderForm({
                     line={l}
                     onClick={() => go(l.view)}
                   />
+                ))}
+                {minimumLines.map((l) => (
+                  <MinimumLineRow key={l.key} line={l} className="px-3.5" />
                 ))}
               </ul>
               <p className="text-muted text-[15px]">
@@ -543,6 +523,9 @@ export function OrderForm({
               {itemLines.map((p) => (
                 <ItemLineRow key={p.id} item={p} />
               ))}
+              {minimumLines.map((l) => (
+                <MinimumLineRow key={l.key} line={l} />
+              ))}
             </ul>
           )}
           <div className="border-line flex items-baseline justify-between gap-3 border-t pt-4 pb-3">
@@ -571,11 +554,17 @@ export function OrderForm({
   // ---- 一個尺寸的照片 ----
   if (screen === "group" && currentGroup) {
     const g = currentGroup;
-    const extra = freeExtraPrints(g);
+    // Prints of this size that still fit under the order's 低消
+    const extra = g.unitPrice
+      ? Math.floor(prints.printingTopUp / g.unitPrice)
+      : 0;
     const hasPhotos = g.photos.length > 0;
     return (
       <div className={`${narrowClass} gap-4`}>
-        <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
+        <StepHeader
+          step={1}
+          back={{ label: "返回所有尺寸", onClick: toPick }}
+        />
         <ContextBanner
           icon={<SizeBox code={g.sizeCode} onTint />}
           label={`${g.sizeLabel} 照片`}
@@ -597,19 +586,20 @@ export function OrderForm({
           onRemoveAll={() => void uploader.removeGroup(g.key)}
         />
 
-        {(g.printingAtMinimum || g.laminationAtMinimum) && (
-          <p className="bg-brand-tint text-brand-dark grid gap-0.5 rounded-[14px] px-4 py-3 text-[15px] font-bold">
-            {g.printingAtMinimum && (
-              <span>
-                洗照片最少收 {fmt(g.printing)}
-                {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
-              </span>
-            )}
-            {g.laminationAtMinimum && (
-              <span>護貝最少收 {fmt(g.lamination)}。</span>
-            )}
-          </p>
-        )}
+        {hasPhotos &&
+          (prints.printingTopUp > 0 || prints.laminationTopUp > 0) && (
+            <p className="bg-brand-tint text-brand-dark grid gap-0.5 rounded-[14px] px-4 py-3 text-[15px] font-bold">
+              {prints.printingTopUp > 0 && (
+                <span>
+                  整筆訂單洗照片最少收 {fmt(MIN_CHARGE)}
+                  {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
+                </span>
+              )}
+              {prints.laminationTopUp > 0 && (
+                <span>整筆訂單護貝最少收 {fmt(MIN_CHARGE)}。</span>
+              )}
+            </p>
+          )}
 
         <BottomBar
           caption={`${g.sizeLabel} 共 ${g.prints} 張${
@@ -637,7 +627,10 @@ export function OrderForm({
       : idSetId;
     return (
       <div className={`${narrowClass} gap-4`}>
-        <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
+        <StepHeader
+          step={1}
+          back={{ label: "返回所有尺寸", onClick: toPick }}
+        />
         <ContextBanner
           icon={<IdCardIcon className="text-brand-dark size-8" />}
           label="證件照"
@@ -665,7 +658,13 @@ export function OrderForm({
           ))}
         </div>
 
-        <h2 className={`${h2Class} mt-2`}>照片和組數</h2>
+        <div className="mt-2 grid gap-1">
+          <h2 className={h2Class}>照片和組數</h2>
+          <p className="text-muted text-[15px]">
+            要去背的照片，在照片下面勾「去背」，每張加 $
+            {BACKGROUND_REMOVAL_PRICE}。
+          </p>
+        </div>
         <PhotoBucket
           bucket={ID_PHOTO_BUCKET}
           entries={idPhotoEntries}
@@ -676,6 +675,7 @@ export function OrderForm({
             id: s.id,
             name: s.name.replace(/^證件照：/, ""),
           }))}
+          backgroundRemovalPrice={BACKGROUND_REMOVAL_PRICE}
         />
         <BottomBar
           caption={`證件照 共 ${idSets} 組`}
@@ -695,7 +695,10 @@ export function OrderForm({
     const empty = customEntries.length === 0 && !customNote.trim();
     return (
       <div className={`${narrowClass} gap-4`}>
-        <StepHeader step={1} back={{ label: "所有尺寸", onClick: toPick }} />
+        <StepHeader
+          step={1}
+          back={{ label: "返回所有尺寸", onClick: toPick }}
+        />
         <ContextBanner
           icon={<BookIcon className="text-brand-dark size-8" />}
           label="客製化商品"
@@ -770,6 +773,9 @@ export function OrderForm({
           ))}
           {itemLines.map((p) => (
             <ItemLineRow key={p.id} item={p} />
+          ))}
+          {minimumLines.map((l) => (
+            <MinimumLineRow key={l.key} line={l} />
           ))}
         </ul>
         <div className="border-line flex items-baseline justify-between gap-3 border-t py-3.5">
@@ -875,65 +881,21 @@ export function OrderForm({
 
       <section className="grid gap-2.5">
         <h2 className={h2Class}>怎麼付錢？</h2>
-        {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((m) => (
+        {paymentMethods.map((m) => (
           <ChoiceCard
             key={m}
             name="paymentMethod"
             checked={paymentMethod === m}
-            onSelect={() => {
-              setPaymentMethod(m);
-              clearFieldError("payment");
-            }}
+            onSelect={() => setPaymentMethod(m)}
             title={PAYMENT_LABEL[m]}
           />
         ))}
         {paymentMethod !== "cash_on_pickup" && (
-          <div className="bg-subtle grid gap-4 rounded-[14px] p-4 text-[17px]">
-            <PaymentDetails method={paymentMethod} />
-            {paymentMethod === "bank_transfer" && (
-              <>
-                <div className="bg-line h-px" />
-                <p className="font-bold">轉帳後，下面選一種做就好</p>
-                {errors.payment && (
-                  <p className="rounded-xl bg-red-50 px-3.5 py-2.5 text-base text-red-800">
-                    {errors.payment}
-                  </p>
-                )}
-                <Field label="填您帳號的末五碼" small>
-                  <input
-                    id={fieldId("payment")}
-                    value={bankLast5}
-                    onChange={(e) => {
-                      setBankLast5(
-                        e.target.value.replace(/\D/g, "").slice(0, 5),
-                      );
-                      clearFieldError("payment");
-                    }}
-                    aria-invalid={!!errors.payment}
-                    inputMode="numeric"
-                    placeholder="12345"
-                    className={`${inputClass} text-[22px] font-bold tracking-[0.2em]`}
-                  />
-                </Field>
-                <p className="text-muted flex items-center gap-3 text-base font-bold">
-                  <span className="bg-line h-px flex-1" />
-                  或是
-                  <span className="bg-line h-px flex-1" />
-                </p>
-                <ProofPicker
-                  proof={proof}
-                  onPick={(f) => {
-                    clearFieldError("payment");
-                    void uploadProof(f);
-                  }}
-                  onRemove={() => {
-                    proofAttempt.current++;
-                    setProof({ status: "idle" });
-                  }}
-                />
-              </>
-            )}
-          </div>
+          <p className="text-muted text-base">
+            {paymentMethod === "bank_transfer"
+              ? "送出訂單後會顯示轉帳帳號，轉帳後再回來填末五碼或傳截圖。"
+              : "送出訂單後會顯示店家的 LINE 好友連結。"}
+          </p>
         )}
       </section>
 
@@ -977,127 +939,22 @@ const inputBase =
 const inputClass = `${inputBase} h-13.5 text-lg`;
 const textareaClass = `${inputBase} py-3 text-lg leading-normal`;
 
-/** 低消 note for the sizes whose single print or lamination costs less than the minimum. */
+/** 低消 note, shown when some size's single print or lamination costs less than the minimum. */
 function minimumChargeNote(
-  sizes: { label: string; price: number; laminationPrice: number }[],
+  sizes: { price: number; laminationPrice: number }[],
 ) {
-  const cheapPrint = sizes.filter((s) => s.price < MIN_GROUP_CHARGE);
-  const cheapLam = sizes.filter(
-    (s) => s.laminationPrice > 0 && s.laminationPrice < MIN_GROUP_CHARGE,
-  );
-  if (!cheapPrint.length && !cheapLam.length) return null;
-  const same =
-    cheapPrint.length === cheapLam.length &&
-    cheapPrint.every((s, i) => s === cheapLam[i]);
-  const labels = (list: typeof sizes) => list.map((s) => s.label).join("、");
-  if (same)
-    return `${labels(cheapPrint)}：只洗一張或只護貝一張時，收 $${MIN_GROUP_CHARGE}`;
-  return [
-    cheapPrint.length &&
-      `${labels(cheapPrint)}：只洗一張收 $${MIN_GROUP_CHARGE}`,
-    cheapLam.length && `${labels(cheapLam)}：只護貝一張收 $${MIN_GROUP_CHARGE}`,
-  ]
-    .filter(Boolean)
-    .join("；");
+  const cheap = (price: number) => price > 0 && price < MIN_CHARGE;
+  const cheapPrint = sizes.some((s) => cheap(s.price));
+  const cheapLam = sizes.some((s) => cheap(s.laminationPrice));
+  if (!cheapPrint && !cheapLam) return null;
+  const min = `$${MIN_CHARGE}`;
+  const rule = cheapPrint
+    ? `整筆訂單洗照片未滿 ${min} 收 ${min}${cheapLam ? "，護貝也一樣另外算" : ""}`
+    : `整筆訂單護貝未滿 ${min} 收 ${min}`;
+  return `${rule}；不同尺寸合起來算`;
 }
-
-/** How many more prints this group can add before its printing charge goes up (低消). */
-function freeExtraPrints(g: {
-  unitPrice: number;
-  prints: number;
-  printing: number;
-}) {
-  let extra = 0;
-  while (
-    extra < MAX_FREE_EXTRA &&
-    minimumCharge(g.unitPrice, g.prints + extra + 1) === g.printing
-  )
-    extra++;
-  return extra;
-}
-const MAX_FREE_EXTRA = 20;
 
 /** Transfer screenshot: pick, upload progress, preview, replace/remove. */
-function ProofPicker({
-  proof,
-  onPick,
-  onRemove,
-}: {
-  proof: Proof;
-  onPick: (file: File) => void;
-  onRemove: () => void;
-}) {
-  const hasFile = proof.status === "uploading" || proof.status === "done";
-  const picker = (
-    <input
-      type="file"
-      accept="image/jpeg,image/png"
-      className="sr-only"
-      onChange={(e) => {
-        const f = e.target.files?.[0];
-        if (f) onPick(f);
-        e.target.value = "";
-      }}
-    />
-  );
-  if (!hasFile)
-    return (
-      <div className="grid gap-2">
-        <label className="border-brand bg-card text-brand-dark flex min-h-13.5 cursor-pointer items-center justify-center gap-2.5 rounded-[14px] border-2 text-lg font-bold">
-          <ImageIcon className="size-6.5" />
-          {proof.status === "failed" ? "重新選截圖" : "傳轉帳截圖"}
-          {picker}
-        </label>
-        {proof.status === "failed" && (
-          <span className="text-base text-red-700">{proof.error}</span>
-        )}
-      </div>
-    );
-  return (
-    <div className="border-line bg-card flex items-center gap-3.5 rounded-[14px] border-2 p-3">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={proof.previewUrl}
-        alt="轉帳截圖預覽"
-        className="border-line size-20 shrink-0 rounded-xl border object-cover"
-      />
-      <div className="grid min-w-0 flex-1 gap-1.5">
-        {proof.status === "uploading" ? (
-          <>
-            <span className="text-base font-bold">
-              上傳中 {Math.round(proof.progress * 100)}%
-            </span>
-            <span className="bg-line h-2 overflow-hidden rounded-full">
-              <span
-                className="bg-brand block h-full rounded-full transition-[width]"
-                style={{ width: `${proof.progress * 100}%` }}
-              />
-            </span>
-          </>
-        ) : (
-          <span className="flex items-center gap-1.5 text-base font-bold text-green-800">
-            <CheckIcon className="size-5.5" />
-            截圖傳好了
-          </span>
-        )}
-        <span className="flex gap-5 text-base">
-          <label className="flex min-h-11 cursor-pointer items-center underline underline-offset-4">
-            換一張
-            {picker}
-          </label>
-          <button
-            type="button"
-            onClick={onRemove}
-            className="min-h-11 underline underline-offset-4"
-          >
-            拿掉
-          </button>
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /** Shown on a checkout row whose photos still need a retry or removal. */
 function uploadIssue(photos: Entry[]) {
   const bad = photos.filter(
@@ -1120,7 +977,8 @@ function StepHeader({
         <button
           type="button"
           onClick={back.onClick}
-          className="text-brand-dark hover:bg-brand-tint -ml-2 flex min-h-11 items-center gap-1 justify-self-start rounded-xl pr-3.5 pl-1.5 text-[17px] font-bold"
+          // Outlined on phones, where testers kept missing it as a plain link.
+          className="text-brand-dark hover:bg-brand-tint border-brand bg-card flex min-h-12 items-center gap-1 justify-self-start rounded-[14px] border-2 pr-4 pl-2.5 text-[17px] font-bold sm:-ml-2 sm:min-h-11 sm:rounded-xl sm:border-0 sm:bg-transparent sm:pr-3.5 sm:pl-1.5"
         >
           <ChevronLeftIcon className="size-5.5" />
           {back.label}
@@ -1278,6 +1136,26 @@ function ItemLineRow({
       </span>
       <span className="text-[17px] font-bold tabular-nums">
         {fmt(item.subtotal)}
+      </span>
+    </li>
+  );
+}
+
+/** 低消 top-up for the whole order's printing or lamination. */
+function MinimumLineRow({
+  line,
+  className = "",
+}: {
+  line: { label: string; amount: number };
+  className?: string;
+}) {
+  return (
+    <li
+      className={`flex min-h-14 items-center justify-between gap-3 py-3 ${className}`}
+    >
+      <span className="text-muted text-base">{line.label}</span>
+      <span className="text-[17px] font-bold tabular-nums">
+        {fmt(line.amount)}
       </span>
     </li>
   );

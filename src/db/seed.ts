@@ -65,6 +65,14 @@ const PRODUCTS = [
     description: "美國簽證、印度簽證",
     sortOrder: 6,
   },
+  {
+    ...ID_PHOTO,
+    code: "id-other",
+    name: "證件照：其他",
+    description: "特殊尺寸、修圖（價格另議）",
+    price: 0, // quoted by the shop afterwards
+    sortOrder: 7,
+  },
 ];
 
 async function main() {

@@ -44,6 +44,7 @@ export type Entry = {
   sha256?: string;
   quantity: number;
   laminateQuantity: number; // prints of `quantity` to laminate (print groups only)
+  removeBackground: boolean; // 去背 (ID_PHOTO_BUCKET only)
   status: EntryStatus;
   progress: number;
   error?: string;
@@ -62,6 +63,7 @@ type PhotoOption = {
   quantity: number;
   laminateQuantity: number;
   productId?: number;
+  removeBackground: boolean;
 };
 
 export type Notice = { bucket: string; message: string };
@@ -85,6 +87,7 @@ function entriesFromDraft(draft: DraftView | null): {
       sha256: p.sha256,
       quantity: p.quantity,
       laminateQuantity: Math.min(p.laminateQuantity, p.quantity),
+      removeBackground: p.removeBackground,
       status: p.status === "uploaded" ? "uploaded" : "missing",
       progress: p.status === "uploaded" ? 1 : 0,
       previewUrl: p.thumbUrl ?? undefined,
@@ -346,12 +349,14 @@ export function usePhotoUploader(
           if (
             current.quantity !== 1 ||
             current.laminateQuantity !== 0 ||
+            current.removeBackground ||
             changedSet
           ) {
             markDirty(u.photoId, {
               quantity: current.quantity,
               laminateQuantity: current.laminateQuantity,
               productId: current.productId,
+              removeBackground: current.removeBackground,
             });
           }
         });
@@ -382,6 +387,7 @@ export function usePhotoUploader(
           size: file.size,
           quantity: 1,
           laminateQuantity: 0,
+          removeBackground: false,
           status: "hashing",
           progress: 0,
           productId:
@@ -493,7 +499,7 @@ export function usePhotoUploader(
     if (e.photoId) await deletePhoto({ photoId: e.photoId });
   }, []);
 
-  // ---- Quantities / lamination / ID-photo sets: saved to the draft in the background (debounced) ----
+  // ---- Quantities / lamination / ID-photo sets / 去背: saved to the draft in the background (debounced) ----
   const changeEntries = useCallback(
     (localIds: string[], change: Partial<PhotoOption>) => {
       const ids = new Set(localIds);
@@ -507,6 +513,7 @@ export function usePhotoUploader(
             Math.min(change.laminateQuantity ?? e.laminateQuantity, quantity),
           ),
           productId: change.productId ?? e.productId,
+          removeBackground: change.removeBackground ?? e.removeBackground,
         };
       };
       setEntries((list) =>
@@ -536,6 +543,12 @@ export function usePhotoUploader(
     [changeEntries],
   );
 
+  const setRemoveBackground = useCallback(
+    (localIds: string[], removeBackground: boolean) =>
+      changeEntries(localIds, { removeBackground }),
+    [changeEntries],
+  );
+
   const dismissNotices = useCallback((bucket: string) => {
     setNotices((ns) => ns.filter((n) => n.bucket !== bucket));
   }, []);
@@ -553,6 +566,7 @@ export function usePhotoUploader(
     setQuantity,
     setLaminateQuantity,
     setIdPhotoSet,
+    setRemoveBackground,
     dismissNotices,
   };
 }

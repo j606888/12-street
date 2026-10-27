@@ -163,6 +163,8 @@ export const photos = pgTable(
     quantity: integer("quantity").notNull().default(1),
     // How many of `quantity` get laminated (護貝); prints only, never above quantity
     laminateQuantity: integer("laminate_quantity").notNull().default(0),
+    // 去背 (background removal); ID photos only, charged once per photo
+    removeBackground: boolean("remove_background").notNull().default(false),
     status: photoStatus("status").notNull().default("pending"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -191,6 +193,8 @@ export const orderItems = pgTable(
     name: text("name").notNull(), // snapshot
     unitPrice: integer("unit_price").notNull(), // snapshot
     quantity: integer("quantity").notNull(),
+    // 去背 fee for the photo, snapshot; null when not requested
+    backgroundRemovalPrice: integer("background_removal_price"),
     photoId: uuid("photo_id").references(() => photos.id, {
       onDelete: "set null",
     }), // ID-photo source

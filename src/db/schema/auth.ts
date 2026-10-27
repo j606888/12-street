@@ -13,6 +13,8 @@ export const user = pgTable("user", {
   image: text("image"),
   role: userRole("role").notNull().default("customer"),
   phone: text("phone"),
+  // 取件時付現金 offered on /order; the shop turns it on per member (/guest always offers it)
+  allowCash: boolean("allow_cash").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

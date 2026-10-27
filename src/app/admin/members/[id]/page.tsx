@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { MemberCashForm } from "@/components/admin/member-cash-form";
 import { MemberNoteForm } from "@/components/admin/member-note-form";
 import { MemberProfileForm } from "@/components/admin/member-profile-form";
 import { MemberRoleForm } from "@/components/admin/member-role-form";
@@ -90,6 +91,13 @@ async function AdminMember({
               userId={member.id}
               isAdmin={member.role === "admin"}
               isSelf={member.id === admin.id}
+            />
+          </Card>
+          <Card title="付款方式">
+            <MemberCashForm
+              key={String(member.allowCash)}
+              userId={member.id}
+              allowCash={member.allowCash}
             />
           </Card>
           <Card title="標籤">

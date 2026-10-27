@@ -1,7 +1,8 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne } from "drizzle-orm";
+import { refresh } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -15,9 +16,11 @@ import {
   findDraftId,
   getOwner,
   LAST_ORDER_COOKIE,
+  memberAllowsCash,
 } from "@/lib/draft";
+import { findViewableOrder } from "@/lib/order-view";
 import { nextOrderNo } from "@/lib/orders";
-import { calculateTotal } from "@/lib/pricing";
+import { BACKGROUND_REMOVAL_PRICE, calculateTotal } from "@/lib/pricing";
 import { RETENTION_MS } from "@/lib/retention";
 import {
   deleteObjects,
@@ -31,6 +34,7 @@ import {
   createGroupInput,
   groupIdInput,
   MAX_PROOF_BYTES,
+  paymentProofInput,
   photoIdInput,
   registerPhotosInput,
   savePhotoOptionsInput,
@@ -295,32 +299,19 @@ export async function savePhotoOptions(input: unknown): Promise<Result> {
         .update(photos)
         .set({ laminateQuantity: item.laminateQuantity })
         .where(and(owned, eq(photos.kind, "print")));
-      if (item.productId && validSets.has(item.productId)) {
-        await tx
-          .update(photos)
-          .set({ productId: item.productId })
-          .where(and(owned, eq(photos.kind, "id_photo")));
-      }
+      // Set and 去背 only apply to ID photos
+      await tx
+        .update(photos)
+        .set({
+          removeBackground: item.removeBackground,
+          ...(item.productId && validSets.has(item.productId)
+            ? { productId: item.productId }
+            : {}),
+        })
+        .where(and(owned, eq(photos.kind, "id_photo")));
     }
   });
   return { ok: true };
-}
-
-// ---- Transfer proof (screenshot of the bank transfer) ----
-
-export async function getTransferProofUploadUrl(
-  input: unknown,
-): Promise<Result<{ key: string; uploadUrl: string }>> {
-  const owner = await getOwner();
-  const { data, error } = parse(transferProofUploadInput, input);
-  if (!data) return { ok: false, error };
-  const orderId = await ensureDraftId(owner);
-  const key = transferProofKey(
-    orderId,
-    randomUUID(),
-    data.contentType === "image/png" ? "png" : "jpg",
-  );
-  return { ok: true, key, uploadUrl: await presignPut(key, data.contentType) };
 }
 
 // ---- Submit ----
@@ -335,19 +326,16 @@ export async function submitOrder(input: unknown): Promise<Result> {
   if (owner.kind === "guest" && !data.contactEmail)
     return { ok: false, error: "請填寫 Email" };
 
-  const orderId = await ensureDraftId(owner);
+  // Cash is offered on the in-store /guest link, and on /order only to members the shop allows
+  if (
+    data.paymentMethod === "cash_on_pickup" &&
+    owner.kind === "member" &&
+    !data.guestLink &&
+    !(await memberAllowsCash(owner.userId))
+  )
+    return { ok: false, error: "請選擇 LINE MONEY 或銀行轉帳" };
 
-  let proofKey: string | null = null;
-  if (data.paymentMethod === "bank_transfer" && data.transferProofKey) {
-    if (!data.transferProofKey.startsWith(`transfer-proofs/${orderId}/`)) {
-      return { ok: false, error: "轉帳截圖無效，請重新上傳" };
-    }
-    const size = await headObjectSize(data.transferProofKey);
-    if (size === null || size > MAX_PROOF_BYTES) {
-      return { ok: false, error: "找不到轉帳截圖，請重新上傳" };
-    }
-    proofKey = data.transferProofKey;
-  }
+  const orderId = await ensureDraftId(owner);
 
   try {
     await db.transaction(async (tx) => {
@@ -368,6 +356,7 @@ export async function submitOrder(input: unknown): Promise<Result> {
           quantity: photos.quantity,
           laminateQuantity: photos.laminateQuantity,
           productId: photos.productId,
+          removeBackground: photos.removeBackground,
         })
         .from(photos)
         .where(eq(photos.orderId, orderId));
@@ -377,7 +366,7 @@ export async function submitOrder(input: unknown): Promise<Result> {
           `還有 ${pending} 張照片沒有上傳完成，請重傳或移除`,
         );
 
-      // Apply the quantities, lamination and ID-photo sets shown at checkout
+      // Apply the quantities, lamination, ID-photo sets and 去背 shown at checkout
       const options = new Map(data.photoOptions.map((o) => [o.photoId, o]));
       for (const p of photoRows) {
         const o = options.get(p.id);
@@ -385,18 +374,26 @@ export async function submitOrder(input: unknown): Promise<Result> {
         const productId =
           p.kind === "id_photo" && o.productId ? o.productId : p.productId;
         const laminateQuantity = p.kind === "print" ? o.laminateQuantity : 0;
+        const removeBackground = p.kind === "id_photo" && o.removeBackground;
         if (
           o.quantity !== p.quantity ||
           laminateQuantity !== p.laminateQuantity ||
-          productId !== p.productId
+          productId !== p.productId ||
+          removeBackground !== p.removeBackground
         ) {
           await tx
             .update(photos)
-            .set({ quantity: o.quantity, laminateQuantity, productId })
+            .set({
+              quantity: o.quantity,
+              laminateQuantity,
+              productId,
+              removeBackground,
+            })
             .where(eq(photos.id, p.id));
           p.quantity = o.quantity;
           p.laminateQuantity = laminateQuantity;
           p.productId = productId;
+          p.removeBackground = removeBackground;
         }
       }
 
@@ -482,6 +479,9 @@ export async function submitOrder(input: unknown): Promise<Result> {
             name: p.name,
             unitPrice: p.price,
             quantity: photo.quantity,
+            backgroundRemovalPrice: photo.removeBackground
+              ? BACKGROUND_REMOVAL_PRICE
+              : null,
             photoId: photo.id,
           };
         }),
@@ -495,7 +495,6 @@ export async function submitOrder(input: unknown): Promise<Result> {
         throw new SubmitError("請至少上傳一張照片或選擇一項商品");
       }
 
-      const isBank = data.paymentMethod === "bank_transfer";
       await tx
         .update(orders)
         .set({
@@ -509,9 +508,6 @@ export async function submitOrder(input: unknown): Promise<Result> {
           note: data.note || null,
           customNote: data.customNote || null,
           paymentMethod: data.paymentMethod,
-          paymentStatus: isBank ? "pending_review" : "unpaid",
-          bankLast5: isBank ? (data.bankLast5 ?? null) : null,
-          transferProofKey: isBank ? proofKey : null,
           totalAmount: calculateTotal({
             groups: pricedGroups,
             items: itemRows,
@@ -540,4 +536,78 @@ export async function submitOrder(input: unknown): Promise<Result> {
   });
   after(() => sendOrderEmail(orderId, "submitted"));
   redirect(`/order/complete?id=${orderId}`);
+}
+
+// ---- Bank transfer details, sent after the order is placed ----
+
+/** A submitted bank-transfer order the caller may see that still waits for payment. */
+async function unpaidTransferOrder(orderId: string) {
+  const order = await findViewableOrder(orderId);
+  if (
+    !order ||
+    order.paymentMethod !== "bank_transfer" ||
+    order.paymentStatus === "paid" ||
+    order.status === "cancelled"
+  )
+    return null;
+  return order;
+}
+
+const NO_TRANSFER = {
+  ok: false,
+  error: "這張訂單目前不需要填寫轉帳資料，請重新整理頁面",
+} as const;
+
+export async function getTransferProofUploadUrl(
+  input: unknown,
+): Promise<Result<{ key: string; uploadUrl: string }>> {
+  const { data, error } = parse(transferProofUploadInput, input);
+  if (!data) return { ok: false, error };
+  const order = await unpaidTransferOrder(data.orderId);
+  if (!order) return NO_TRANSFER;
+  const key = transferProofKey(
+    order.id,
+    randomUUID(),
+    data.contentType === "image/png" ? "png" : "jpg",
+  );
+  return { ok: true, key, uploadUrl: await presignPut(key, data.contentType) };
+}
+
+/** 帳號末五碼 and/or a transfer screenshot; can be corrected until the shop confirms payment. */
+export async function submitPaymentProof(input: unknown): Promise<Result> {
+  const { data, error } = parse(paymentProofInput, input);
+  if (!data) return { ok: false, error };
+  const order = await unpaidTransferOrder(data.orderId);
+  if (!order) return NO_TRANSFER;
+
+  let proofKey: string | null = null;
+  if (data.transferProofKey) {
+    if (!data.transferProofKey.startsWith(`transfer-proofs/${order.id}/`)) {
+      return { ok: false, error: "轉帳截圖無效，請重新上傳" };
+    }
+    const size = await headObjectSize(data.transferProofKey);
+    if (size === null || size > MAX_PROOF_BYTES) {
+      return { ok: false, error: "找不到轉帳截圖，請重新上傳" };
+    }
+    proofKey = data.transferProofKey;
+  }
+
+  const updated = await db
+    .update(orders)
+    .set({
+      paymentStatus: "pending_review",
+      bankLast5: data.bankLast5 ?? null,
+      transferProofKey: proofKey,
+    })
+    .where(
+      and(
+        eq(orders.id, order.id),
+        ne(orders.paymentStatus, "paid"),
+        ne(orders.status, "cancelled"),
+      ),
+    )
+    .returning({ id: orders.id });
+  if (!updated.length) return NO_TRANSFER;
+  refresh();
+  return { ok: true };
 }

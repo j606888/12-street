@@ -11,6 +11,7 @@ import {
   lastContactEmail,
   loadCatalog,
   loadDraft,
+  memberAllowsCash,
 } from "@/lib/draft";
 
 /**
@@ -67,10 +68,12 @@ async function MemberChip({ guest }: { guest?: boolean }) {
 async function OrderLoader({ guest }: { guest?: boolean }) {
   const owner = await getOwner();
   if (owner.kind !== "member" && !guest) redirect("/login?next=/order");
-  const [catalog, draftId, email] = await Promise.all([
+  const [catalog, draftId, email, cashAllowed] = await Promise.all([
     loadCatalog(),
     findDraftId(owner),
     owner.kind === "member" ? lastContactEmail(owner.userId) : null,
+    // The in-store /guest link always offers cash, even to signed-in members
+    guest || (owner.kind === "member" && memberAllowsCash(owner.userId)),
   ]);
   const draft = draftId ? await loadDraft(draftId) : null;
   if (!catalog.sizes.length) return <p>目前沒有可選的沖印尺寸，請稍後再試。</p>;
@@ -83,6 +86,8 @@ async function OrderLoader({ guest }: { guest?: boolean }) {
           ? { name: owner.name, phone: owner.phone, email }
           : null
       }
+      cashAllowed={cashAllowed}
+      guestLink={guest}
     />
   );
 }

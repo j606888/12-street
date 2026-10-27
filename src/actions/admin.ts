@@ -15,6 +15,7 @@ import {
   orderIdInput,
   orderPhotoInput,
   removeMemberTagInput,
+  setMemberCashInput,
   setMemberRoleInput,
   updateMemberInput,
   updateMemberNoteInput,
@@ -298,6 +299,22 @@ export async function setMemberRole(input: unknown): Promise<Result> {
   const updated = await db
     .update(user)
     .set({ role: data.role })
+    .where(eq(user.id, data.userId))
+    .returning({ id: user.id });
+  if (!updated.length) return NO_MEMBER;
+  refresh();
+  return { ok: true };
+}
+
+/** Lets a member pick 取件時付現金 when ordering through /order (LINE). */
+export async function setMemberCash(input: unknown): Promise<Result> {
+  if (!(await getAdmin())) return FORBIDDEN;
+  const { data, error } = parse(setMemberCashInput, input);
+  if (!data) return { ok: false, error };
+
+  const updated = await db
+    .update(user)
+    .set({ allowCash: data.allowCash })
     .where(eq(user.id, data.userId))
     .returning({ id: user.id });
   if (!updated.length) return NO_MEMBER;

@@ -11,6 +11,22 @@ export function isLineApp() {
   return /\bLine\//i.test(navigator.userAgent);
 }
 
+let liffReady: Promise<typeof import("@line/liff").default> | null = null;
+
+/**
+ * The initialised LIFF SDK, or null outside the LINE app. Initialised once per
+ * page load; later callers (e.g. the order-complete message) share it.
+ */
+export function initLiff() {
+  if (!LIFF_ID || !isLineApp()) return null;
+  liffReady ??= import("@line/liff").then(async ({ default: liff }) => {
+    // Also follows `liff.state` to the path in the LIFF URL
+    await liff.init({ liffId: LIFF_ID });
+    return liff;
+  });
+  return liffReady;
+}
+
 /**
  * Opened from the LINE app through a LIFF URL: sign in with the LIFF ID token
  * so the customer never sees the login page. Elsewhere it does nothing.
@@ -20,7 +36,8 @@ export function LiffAutoLogin() {
 
   useEffect(() => {
     // Only the LINE in-app browser can be a LIFF client; skip loading the SDK elsewhere
-    if (!LIFF_ID || !isLineApp()) return;
+    const ready = initLiff();
+    if (!ready) return;
     let cancelled = false;
 
     (async () => {
@@ -28,11 +45,7 @@ export function LiffAutoLogin() {
       // and initialising LIFF instead of after.
       const [{ data: session }, liff] = await Promise.all([
         authClient.getSession(),
-        import("@line/liff").then(async ({ default: liff }) => {
-          // Also follows `liff.state` to the path in the LIFF URL
-          await liff.init({ liffId: LIFF_ID });
-          return liff;
-        }),
+        ready,
       ]);
       if (cancelled || session || !liff.isInClient()) return;
 

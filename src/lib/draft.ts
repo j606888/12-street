@@ -5,7 +5,14 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { presignGet } from "@/lib/r2";
 import { getSession } from "@/lib/session";
-import { orderGroups, orders, photos, printSizes, products } from "@/db/schema";
+import {
+  orderGroups,
+  orders,
+  photos,
+  printSizes,
+  products,
+  user,
+} from "@/db/schema";
 
 export const DRAFT_COOKIE = "draft_token";
 export const LAST_ORDER_COOKIE = "last_order";
@@ -39,6 +46,15 @@ export async function getOwner(): Promise<Owner> {
     kind: "guest",
     draftToken: token && DRAFT_TOKEN_RE.test(token) ? token : null,
   };
+}
+
+/** Whether the shop lets this member pick 取件時付現金 on /order. */
+export async function memberAllowsCash(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ allowCash: user.allowCash })
+    .from(user)
+    .where(eq(user.id, userId));
+  return row?.allowCash ?? false;
 }
 
 /** The email a member gave on their latest order, to prefill the next one. */
@@ -103,6 +119,7 @@ export type DraftPhoto = {
   status: "pending" | "uploaded";
   thumbUrl: string | null;
   productId: number | null; // ID-photo set
+  removeBackground: boolean; // 去背, ID photos only
 };
 
 export type DraftView = {
@@ -146,6 +163,7 @@ export async function loadDraft(orderId: string): Promise<DraftView> {
         status: p.status as "pending" | "uploaded",
         thumbUrl: p.status === "uploaded" ? await presignGet(p.r2Key) : null,
         productId: p.productId,
+        removeBackground: p.removeBackground,
       },
     })),
   );

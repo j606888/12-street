@@ -113,6 +113,7 @@ async function orderSummaries(orderIds: string[]) {
         name: orderItems.name,
         quantity: orderItems.quantity,
         isIdPhoto: sql<boolean>`${orderItems.photoId} is not null`,
+        removeBackground: sql<boolean>`${orderItems.backgroundRemovalPrice} is not null`,
       })
       .from(orderItems)
       .where(inArray(orderItems.orderId, orderIds)),
@@ -131,7 +132,10 @@ async function orderSummaries(orderIds: string[]) {
     );
   }
   for (const i of items) {
-    add(i.orderId, `${i.name} ×${i.quantity}${i.isIdPhoto ? " 組" : ""}`);
+    add(
+      i.orderId,
+      `${i.name} ×${i.quantity}${i.isIdPhoto ? " 組" : ""}${i.removeBackground ? "・去背" : ""}`,
+    );
   }
   for (const c of custom) add(c.orderId, `客製化 ${c.n} 張`);
   return new Map([...map].map(([id, parts]) => [id, parts.join("、")]));
@@ -287,6 +291,7 @@ export async function loadOrderPhotos(orderId: string): Promise<AdminPhoto[]> {
         sizeBytes: photos.sizeBytes,
         quantity: photos.quantity,
         laminateQuantity: photos.laminateQuantity,
+        removeBackground: photos.removeBackground,
         status: photos.status,
         expiresAt: photos.expiresAt,
         productName: products.name,
@@ -324,7 +329,11 @@ export async function loadOrderPhotos(orderId: string): Promise<AdminPhoto[]> {
       .filter((p) => p.kind === "id_photo")
       .map((p) => ({
         ...view(p, `證件照/${idPhotoFolder(p.productName)}`),
-        quantity: { n: p.quantity, unit: "組" as const },
+        quantity: {
+          n: p.quantity,
+          unit: "組" as const,
+          removeBackground: p.removeBackground,
+        },
       })),
     ...rows
       .filter((p) => p.kind === "custom")
@@ -353,6 +362,7 @@ export async function getMember(userId: string) {
       name: user.name,
       phone: user.phone,
       role: user.role,
+      allowCash: user.allowCash,
       createdAt: user.createdAt,
       orderCount: count(orders.id),
       lastOrderAt: max(orders.submittedAt),
