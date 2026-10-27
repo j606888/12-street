@@ -40,13 +40,22 @@ export function OrderScreen({ guest }: { guest?: boolean }) {
 async function MemberChip({ guest }: { guest?: boolean }) {
   const owner = await getOwner();
   if (owner.kind === "member") {
+    // The name chip also opens the order list, but customers didn't find that
     return (
-      <Link
-        href="/orders/mine"
-        className="border-line bg-card flex h-11 max-w-36 shrink-0 items-center rounded-full border px-4 text-[15px] font-bold"
-      >
-        <span className="truncate">{owner.name}</span>
-      </Link>
+      <nav className="flex min-w-0 shrink-0 items-center gap-1 text-base font-bold">
+        <Link
+          href="/orders/mine"
+          className="text-brand-dark flex min-h-11 shrink-0 items-center px-2 sm:px-3.5"
+        >
+          訂單查詢
+        </Link>
+        <Link
+          href="/orders/mine"
+          className="border-line bg-card flex h-11 max-w-28 items-center rounded-full border px-4 text-[15px] sm:max-w-36"
+        >
+          <span className="truncate">{owner.name}</span>
+        </Link>
+      </nav>
     );
   }
   if (!guest) return null;

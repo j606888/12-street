@@ -862,7 +862,6 @@ export function OrderForm({
             onChange={(e) => setNote(e.target.value)}
             maxLength={1000}
             rows={2}
-            placeholder="例如：星期五下午來拿"
             className={textareaClass}
           />
         </Field>
