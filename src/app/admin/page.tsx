@@ -7,6 +7,7 @@ import { OrderSearchBox } from "@/components/admin/search-box";
 import {
   ExpiryPill,
   PaymentStatusBadge,
+  QuotePill,
 } from "@/components/admin/status-badges";
 import { btn, Card, td, th } from "@/components/admin/ui";
 import { ZipDownloadButton } from "@/components/admin/zip-download-button";
@@ -276,6 +277,11 @@ async function Overview() {
                           className={`${td} text-right font-semibold whitespace-nowrap tabular-nums`}
                         >
                           {formatNtd(o.totalAmount)}
+                          {o.quoted && (
+                            <div className="mt-1">
+                              <QuotePill />
+                            </div>
+                          )}
                         </td>
                         <td className={`${td} text-right whitespace-nowrap`}>
                           <span className="inline-flex items-start gap-1.5">

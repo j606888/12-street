@@ -450,6 +450,7 @@ export function OrderForm({
                 {minimumNote}
               </p>
             )}
+            <SizeChart sizes={catalog.sizes} />
             <div className="grid grid-cols-2 gap-2.5 pt-1.5 sm:grid-cols-4">
               {catalog.sizes.map((s) => {
                 const picked = printsBySize.get(s.id) ?? 0;
@@ -483,32 +484,7 @@ export function OrderForm({
                 );
               })}
             </div>
-            <SizeChart sizes={catalog.sizes} />
           </section>
-
-          {/* Below the sizes, so coming back from a size shows them first */}
-          {orderLines.length > 0 && (
-            <section className="grid gap-2.5 lg:hidden">
-              <div className="flex flex-wrap items-center justify-between gap-x-4">
-                <h2 className={h2Class}>已經選的</h2>
-                <span className="text-muted text-base">
-                  <RemoveAll label="全部刪除" onConfirm={clearOrder} />
-                </span>
-              </div>
-              <ul className="border-line bg-card divide-subtle grid divide-y overflow-hidden rounded-2xl border">
-                {orderLines.map((l) => (
-                  <OrderLineRow
-                    key={l.key}
-                    line={l}
-                    onClick={() => go(l.view)}
-                  />
-                ))}
-              </ul>
-              <p className="text-muted text-[15px]">
-                點一行可以加減照片或張數。
-              </p>
-            </section>
-          )}
 
           <section className="grid gap-2.5">
             <h2 className={h2Class}>其他</h2>
@@ -554,6 +530,30 @@ export function OrderForm({
               ))}
             </div>
           </section>
+
+          {/* Last, so coming back from a size shows the size buttons first */}
+          {orderLines.length > 0 && (
+            <section className="grid gap-2.5 lg:hidden">
+              <div className="flex flex-wrap items-center justify-between gap-x-4">
+                <h2 className={h2Class}>已經選的</h2>
+                <span className="text-muted text-base">
+                  <RemoveAll label="全部刪除" onConfirm={clearOrder} />
+                </span>
+              </div>
+              <ul className="border-line bg-card divide-subtle grid divide-y overflow-hidden rounded-2xl border">
+                {orderLines.map((l) => (
+                  <OrderLineRow
+                    key={l.key}
+                    line={l}
+                    onClick={() => go(l.view)}
+                  />
+                ))}
+              </ul>
+              <p className="text-muted text-[15px]">
+                點一行可以加減照片或張數。
+              </p>
+            </section>
+          )}
         </div>
 
         <aside className="border-line bg-card sticky top-6 hidden gap-1 rounded-2xl border p-5 lg:grid">
@@ -610,10 +610,6 @@ export function OrderForm({
   // ---- 一個尺寸的照片 ----
   if (screen === "group" && currentGroup) {
     const g = currentGroup;
-    // Prints of this size that still fit under the 低消 it carries
-    const extra = g.unitPrice
-      ? Math.floor((g.printing - g.unitPrice * g.prints) / g.unitPrice)
-      : 0;
     const hasPhotos = g.photos.length > 0;
     return (
       <div className={`${narrowClass} gap-4`}>
@@ -642,20 +638,6 @@ export function OrderForm({
           laminationPrice={g.laminationPrice}
           onRemoveAll={() => void uploader.removeGroup(g.key)}
         />
-
-        {(g.printingAtMinimum || g.laminationAtMinimum) && (
-          <p className="bg-brand-tint text-brand-dark grid gap-0.5 rounded-[14px] px-4 py-3 text-[15px] font-bold">
-            {g.printingAtMinimum && (
-              <span>
-                洗照片最少收 {fmt(g.printing)}
-                {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
-              </span>
-            )}
-            {g.laminationAtMinimum && (
-              <span>護貝最少收 {fmt(g.lamination)}。</span>
-            )}
-          </p>
-        )}
 
         <BottomBar
           caption={`${g.sizeLabel} 共 ${g.prints} 張${
@@ -822,7 +804,8 @@ export function OrderForm({
           </span>
         </div>
         {hasQuoted && (
-          <p className="text-brand-dark -mt-1 pb-3.5 text-[15px] font-bold text-balance">
+          <p className="mb-4 flex gap-2 rounded-xl bg-red-50 px-3.5 py-2.5 text-base font-bold text-red-700">
+            <InfoIcon className="mt-0.5 size-5 shrink-0" />
             此訂單包含價格另議項目，實際金額請與店家聯繫
           </p>
         )}
@@ -1261,7 +1244,7 @@ function ContextBanner({
   );
 }
 
-/** 「各尺寸是幾公分？」 under the size buttons: opens a table of each size in cm. */
+/** 「各尺寸是幾公分？」 above the size buttons: opens a table of each size in cm. */
 function SizeChart({ sizes }: { sizes: Catalog["sizes"] }) {
   const dialog = useRef<HTMLDialogElement>(null);
   return (
@@ -1341,6 +1324,7 @@ function OrderLineRow({
   const issue = uploadIssue(line.photos) ?? line.issue;
   const body = (
     <>
+      {/* Up to three 44px thumbnails overlapping to fit 80px, clear of the text */}
       <span className="flex w-20 shrink-0">
         {thumbs.map((p) => (
           // eslint-disable-next-line @next/next/no-img-element
@@ -1348,7 +1332,7 @@ function OrderLineRow({
             key={p.localId}
             src={p.previewUrl}
             alt=""
-            className="border-card bg-subtle -mr-3 size-11 rounded-lg border-2 object-cover"
+            className="border-card bg-subtle size-11 shrink-0 rounded-lg border-2 object-cover not-first:-ml-6.5"
           />
         ))}
       </span>

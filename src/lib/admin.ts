@@ -141,6 +141,13 @@ async function orderSummaries(orderIds: string[]) {
   return new Map([...map].map(([id, parts]) => [id, parts.join("、")]));
 }
 
+/** Has something the shop prices afterwards (價格另議): custom work or the 其他 ID photo set. */
+export const orderHasQuote = sql<boolean>`(
+  ${orders.customNote} is not null
+  or exists (select 1 from ${photos} where ${photos.orderId} = ${orders.id} and ${photos.kind} = 'custom')
+  or exists (select 1 from ${orderItems} where ${orderItems.orderId} = ${orders.id} and ${orderItems.photoId} is not null and ${orderItems.unitPrice} = 0)
+)`;
+
 const orderListColumns = {
   id: orders.id,
   orderNo: orders.orderNo,
@@ -152,6 +159,7 @@ const orderListColumns = {
   contactName: orders.contactName,
   contactPhone: orders.contactPhone,
   userId: orders.userId,
+  quoted: orderHasQuote,
 };
 
 export async function listOrders(filter: OrderFilter) {

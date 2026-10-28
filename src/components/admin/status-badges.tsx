@@ -48,6 +48,11 @@ export function PaymentStatusBadge({
   );
 }
 
+/** The order has 價格另議 items, so its amount isn't final yet. */
+export function QuotePill() {
+  return <span className={`${PILL} bg-warn-bg text-warn-fg`}>含價格另議</span>;
+}
+
 /** "剩 3 天" until photos are deleted: red within 2 days, amber within 7. */
 export function ExpiryPill({ days }: { days: number }) {
   const tone =

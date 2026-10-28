@@ -9,6 +9,7 @@ import { Pagination } from "@/components/admin/pagination";
 import {
   OrderStatusBadge,
   PaymentStatusBadge,
+  QuotePill,
 } from "@/components/admin/status-badges";
 import { TagList } from "@/components/admin/tag-list";
 import {
@@ -230,6 +231,11 @@ async function Orders({
                       className={`${td} text-right font-semibold tabular-nums`}
                     >
                       {formatNtd(o.totalAmount)}
+                      {o.quoted && (
+                        <div className="mt-1">
+                          <QuotePill />
+                        </div>
+                      )}
                     </td>
                     <td className={`${td} pl-6`}>
                       <PaymentStatusBadge status={o.paymentStatus} />

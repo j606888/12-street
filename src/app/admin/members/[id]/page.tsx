@@ -10,6 +10,7 @@ import { MemberTags, TagOptions } from "@/components/admin/member-tags";
 import {
   OrderStatusBadge,
   PaymentStatusBadge,
+  QuotePill,
 } from "@/components/admin/status-badges";
 import { Avatar, btn, Card, td, th } from "@/components/admin/ui";
 import { ArrowLeftIcon, ChevronRightIcon } from "@/components/icons";
@@ -173,6 +174,11 @@ async function AdminMember({
                         </td>
                         <td className={`${td} text-right tabular-nums`}>
                           {formatNtd(o.totalAmount)}
+                          {o.quoted && (
+                            <div className="mt-1">
+                              <QuotePill />
+                            </div>
+                          )}
                         </td>
                         <td className={`${td} text-ink-3`}>
                           {o.submittedAt && formatTaipeiTime(o.submittedAt)}

@@ -17,6 +17,7 @@ import { StatusSelect } from "@/components/admin/status-select";
 import {
   OrderStatusBadge,
   PaymentStatusBadge,
+  QuotePill,
 } from "@/components/admin/status-badges";
 import { btn, Card } from "@/components/admin/ui";
 import { ZipDownloadButton } from "@/components/admin/zip-download-button";
@@ -29,7 +30,13 @@ import {
 } from "@/components/icons";
 import { OrderLines } from "@/components/order/order-detail";
 import { PAYMENT_LABEL } from "@/components/payment-details";
-import { listTags, loadOrderPhotos, memberNote, tagsByUser } from "@/lib/admin";
+import {
+  listTags,
+  loadOrderPhotos,
+  memberNote,
+  orderHasQuote,
+  tagsByUser,
+} from "@/lib/admin";
 import { db } from "@/lib/db";
 import { formatBytes, formatNtd, formatTaipeiTime } from "@/lib/format";
 import {
@@ -126,13 +133,14 @@ async function AdminOrder({
       order: orders,
       member: { id: user.id, name: user.name },
       paidByName: paidBy.name,
+      quoted: orderHasQuote,
     })
     .from(orders)
     .leftJoin(user, eq(user.id, orders.userId))
     .leftJoin(paidBy, eq(paidBy.id, orders.paidById))
     .where(eq(orders.id, id.data));
   if (!row || row.order.status === "draft") notFound();
-  const { order, member, paidByName } = row;
+  const { order, member, paidByName, quoted } = row;
 
   const [photoList, allTags, memberTags, note, proofUrl] = await Promise.all([
     loadOrderPhotos(order.id),
@@ -160,6 +168,7 @@ async function AdminOrder({
             </h1>
             <OrderStatusBadge status={order.status} />
             <PaymentStatusBadge status={order.paymentStatus} long />
+            {quoted && <QuotePill />}
           </div>
           <p className="text-ink-3 text-[13px]">
             {order.submittedAt &&
