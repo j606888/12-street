@@ -88,26 +88,31 @@ async function encodeJpeg({ image, width, height }: Decoded): Promise<Blob> {
   }
 }
 
-// One conversion at a time: each full-size decode holds ~100 MB on a phone
-let queue: Promise<unknown> = Promise.resolve();
+// Once native HEIC decoding has failed, skip straight to WASM for the rest
+let nativeHeic = true;
 
-/** Converts a non-JPEG photo to a JPEG File. Throws if the browser can't read it. */
-export function convertToJpeg(file: File, format: PhotoFormat): Promise<File> {
-  const run = async () => {
-    let decoded: Decoded;
+/**
+ * Converts a non-JPEG photo to a JPEG File. Throws if the browser can't read it.
+ * Run one at a time: each full-size decode holds ~100 MB on a phone.
+ */
+export async function convertToJpeg(
+  file: File,
+  format: PhotoFormat,
+): Promise<File> {
+  let decoded: Decoded;
+  if (format !== "heic") decoded = await decodeNative(file);
+  else if (!nativeHeic) decoded = await decodeHeicWasm(file);
+  else {
     try {
       decoded = await decodeNative(file);
-    } catch (err) {
-      if (format !== "heic") throw err;
+    } catch {
       decoded = await decodeHeicWasm(file);
+      nativeHeic = false; // WASM read it, so the browser was the problem
     }
-    const blob = await encodeJpeg(decoded);
-    return new File([blob], jpegFileName(file.name), {
-      type: "image/jpeg",
-      lastModified: file.lastModified,
-    });
-  };
-  const result = queue.then(run, run);
-  queue = result.catch(() => undefined);
-  return result;
+  }
+  const blob = await encodeJpeg(decoded);
+  return new File([blob], jpegFileName(file.name), {
+    type: "image/jpeg",
+    lastModified: file.lastModified,
+  });
 }

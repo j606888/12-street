@@ -15,20 +15,25 @@ import {
 import type { DraftView } from "@/lib/draft";
 import {
   checkPhotoFile,
-  mapLimit,
-  preparePhoto,
+  createLimiter,
   putFile,
+  sha256Hex,
   sniffPhoto,
+  toJpeg,
   UploadError,
 } from "./upload-utils";
 import type { PhotoFormat } from "./convert-photo";
 
 const MAX_CONCURRENT_UPLOADS = 3;
+// Converting is memory-heavy (one full-size decode at a time); hashing is cheap
+const convertSlot = createLimiter(1);
+const hashSlot = createLimiter(2);
 export const CUSTOM_BUCKET = "custom";
 export const ID_PHOTO_BUCKET = "id_photo";
 
 export type EntryStatus =
   | "hashing" // reading file + SHA-256 in the browser
+  | "convertQueued" // waiting for its turn to convert
   | "converting" // HEIC/PNG/WebP → JPEG in the browser
   | "registering" // asking the server for a presigned URL
   | "queued"
@@ -133,6 +138,7 @@ export function usePhotoUploader(
   });
 
   const inFlight = useRef(new Map<string, () => void>()); // localId → abort
+  const removed = useRef(new Set<string>()); // localIds removed while still being prepared
   const groupIdPromises = useRef(new Map<string, Promise<string>>());
   const confirmQueue = useRef<string[]>([]);
   const confirming = useRef(false);
@@ -250,6 +256,34 @@ export function usePhotoUploader(
     return () => window.removeEventListener("online", onOnline);
   }, []);
 
+  // Keep the screen awake while photos convert/upload: a locked phone pauses both
+  const working = entries.some(
+    (e) => !["uploaded", "failed", "missing"].includes(e.status),
+  );
+  useEffect(() => {
+    if (!working || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let stopped = false;
+    const acquire = () => {
+      if (document.visibilityState !== "visible") return;
+      navigator.wakeLock
+        .request("screen")
+        .then((l) => {
+          if (stopped) void l.release();
+          else lock = l;
+        })
+        .catch(() => undefined); // unsupported in this webview / denied: just skip
+    };
+    acquire();
+    // The browser drops the lock whenever the page is hidden
+    document.addEventListener("visibilitychange", acquire);
+    return () => {
+      stopped = true;
+      document.removeEventListener("visibilitychange", acquire);
+      void lock?.release();
+    };
+  }, [working]);
+
   // ---- Groups ----
   const ensureGroupId = useCallback((key: string): Promise<string> => {
     const group = groupsRef.current.find((g) => g.key === key);
@@ -297,6 +331,7 @@ export function usePhotoUploader(
     const group = groupsRef.current.find((g) => g.key === key);
     for (const e of entriesRef.current.filter((x) => x.bucket === key)) {
       inFlight.current.get(e.localId)?.();
+      removed.current.add(e.localId);
       if (e.file && e.previewUrl) URL.revokeObjectURL(e.previewUrl);
     }
     setGroups((gs) => gs.filter((g) => g.key !== key));
@@ -311,6 +346,7 @@ export function usePhotoUploader(
   const clearAll = useCallback(async () => {
     for (const e of entriesRef.current) {
       inFlight.current.get(e.localId)?.();
+      removed.current.add(e.localId);
       if (e.file && e.previewUrl) URL.revokeObjectURL(e.previewUrl);
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -393,8 +429,7 @@ export function usePhotoUploader(
   const addFiles = useCallback(
     async (bucket: string, fileList: File[]) => {
       const rejected: string[] = [];
-      const accepted: Entry[] = [];
-      const formats = new Map<string, PhotoFormat>(); // localId → sniffed format
+      const accepted: { entry: Entry; format: PhotoFormat }[] = [];
       for (const file of fileList) {
         const problem = checkPhotoFile(file);
         if (problem) {
@@ -402,24 +437,24 @@ export function usePhotoUploader(
           continue;
         }
         const format = await sniffPhoto(file);
-        const localId = newLocalId();
-        formats.set(localId, format);
+        const convert = format !== "jpeg" && format !== "unknown";
         accepted.push({
-          localId,
-          bucket,
-          fileName: file.name,
-          size: file.size,
-          quantity: 1,
-          laminateQuantity: 0,
-          removeBackground: false,
-          status:
-            format === "jpeg" || format === "unknown"
-              ? "hashing"
-              : "converting",
-          progress: 0,
-          file,
-          // Most browsers can't show HEIC; its preview comes from the converted JPEG
-          previewUrl: format === "heic" ? undefined : URL.createObjectURL(file),
+          format,
+          entry: {
+            localId: newLocalId(),
+            bucket,
+            fileName: file.name,
+            size: file.size,
+            quantity: 1,
+            laminateQuantity: 0,
+            removeBackground: false,
+            status: convert ? "convertQueued" : "hashing",
+            progress: 0,
+            file,
+            // Most browsers can't show HEIC; its preview comes from the converted JPEG
+            previewUrl:
+              format === "heic" ? undefined : URL.createObjectURL(file),
+          },
         });
       }
       setNotices((ns) => [
@@ -427,33 +462,61 @@ export function usePhotoUploader(
         ...rejected.map((message) => ({ bucket, message })),
       ]);
       if (!accepted.length) return;
-      setEntries((list) => [...list, ...accepted]);
+      setEntries((list) => [...list, ...accepted.map((a) => a.entry)]);
 
-      const inspected = await mapLimit(accepted, 2, async (e) => ({
-        e,
-        r: await preparePhoto(e.file!, formats.get(e.localId)!),
-      }));
+      // Each photo goes on to register (and upload) as soon as it's ready, so
+      // uploads overlap with converting the rest instead of waiting for all of them
       const toRegister: Entry[] = [];
-      for (const { e, r } of inspected) {
-        if ("error" in r) {
-          setNotices((ns) => [
-            ...ns,
-            { bucket, message: `「${e.fileName}」${r.error}` },
-          ]);
-          if (e.previewUrl) URL.revokeObjectURL(e.previewUrl);
-          setEntries((list) => list.filter((x) => x.localId !== e.localId));
-          continue;
+      let registering = false;
+      const flushRegister = async () => {
+        if (registering) return;
+        registering = true;
+        while (toRegister.length) {
+          const batch = toRegister
+            .splice(0, 100)
+            .filter((x) => !removed.current.has(x.localId));
+          if (batch.length) await register(bucket, batch);
         }
-        let ready: Entry = { ...e, sha256: r.sha256 };
-        if (r.file !== e.file) {
+        registering = false;
+      };
+
+      const drop = (e: Entry, error: string) => {
+        setNotices((ns) => [
+          ...ns,
+          { bucket, message: `「${e.fileName}」${error}` },
+        ]);
+        if (e.previewUrl) URL.revokeObjectURL(e.previewUrl);
+        setEntries((list) => list.filter((x) => x.localId !== e.localId));
+      };
+
+      const prepare = async ({
+        entry: e,
+        format,
+      }: (typeof accepted)[number]) => {
+        let file = e.file!;
+        if (format !== "jpeg") {
+          const converted = await convertSlot(async () => {
+            if (removed.current.has(e.localId)) return null;
+            patch(e.localId, { status: "converting" });
+            return toJpeg(file, format);
+          });
+          if (!converted) return;
+          if ("error" in converted) return drop(e, converted.error);
+          file = converted;
+        }
+        const sha256 = await hashSlot(() => sha256Hex(file));
+        if (removed.current.has(e.localId)) return;
+
+        let ready: Entry = { ...e, sha256 };
+        if (file !== e.file) {
           // Converted: upload and preview the JPEG, not the original
           if (e.previewUrl) URL.revokeObjectURL(e.previewUrl);
           ready = {
             ...ready,
-            file: r.file,
-            fileName: r.file.name,
-            size: r.file.size,
-            previewUrl: URL.createObjectURL(r.file),
+            file,
+            fileName: file.name,
+            size: file.size,
+            previewUrl: URL.createObjectURL(file),
           };
         }
         // Same file as one left unfinished before a reload: resume that photo instead of adding a new one
@@ -491,10 +554,9 @@ export function usePhotoUploader(
                   error: res && !res.ok ? res.error : "連線失敗",
                 },
           );
-          continue;
+          return;
         }
         patch(e.localId, {
-          status: "hashing",
           sha256: ready.sha256,
           file: ready.file,
           fileName: ready.fileName,
@@ -502,13 +564,10 @@ export function usePhotoUploader(
           previewUrl: ready.previewUrl,
         });
         toRegister.push(ready);
-      }
-      const remaining = toRegister.filter((e) =>
-        entriesRef.current.some((x) => x.localId === e.localId),
-      );
-      for (let i = 0; i < remaining.length; i += 100) {
-        await register(bucket, remaining.slice(i, i + 100));
-      }
+        await flushRegister();
+      };
+
+      await Promise.all(accepted.map(prepare));
     },
     [patch, register],
   );
@@ -538,6 +597,7 @@ export function usePhotoUploader(
     const e = entriesRef.current.find((x) => x.localId === localId);
     if (!e) return;
     inFlight.current.get(localId)?.();
+    removed.current.add(localId);
     if (e.file && e.previewUrl) URL.revokeObjectURL(e.previewUrl);
     setEntries((list) => list.filter((x) => x.localId !== localId));
     if (e.photoId) await deletePhoto({ photoId: e.photoId });

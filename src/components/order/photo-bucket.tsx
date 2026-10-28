@@ -14,6 +14,7 @@ import type { Entry, Notice, PhotoUploader } from "./use-photo-uploader";
 
 const STATUS_LABEL: Record<Entry["status"], string> = {
   hashing: "檢查中…",
+  convertQueued: "等待轉檔",
   converting: "轉成 JPG 中…",
   registering: "準備上傳…",
   queued: "等待上傳",
@@ -73,6 +74,9 @@ export function PhotoBucket({
   const done = entries.filter((e) => e.status === "uploaded").length;
   const failed = entries.filter((e) => e.status === "failed").length;
   const missing = entries.filter((e) => e.status === "missing").length;
+  const converting = entries.filter(
+    (e) => e.status === "convertQueued" || e.status === "converting",
+  ).length;
   const prints = entries.reduce((n, e) => n + e.quantity, 0);
   const ids = entries.map((e) => e.localId);
   const laminatable = laminationPrice !== undefined;
@@ -183,6 +187,7 @@ export function PhotoBucket({
             {done < entries.length || failed > 0 ? (
               <span>
                 已上傳 {done}／{entries.length}
+                {converting > 0 && <span>，{converting} 張轉檔中</span>}
                 {failed > 0 && (
                   <span className="text-red-700">，失敗 {failed} 張</span>
                 )}
