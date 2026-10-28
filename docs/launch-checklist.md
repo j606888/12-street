@@ -96,7 +96,7 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 用手機和電腦各測一次。
 
 - [ ] `/`（會轉到 `/order`→登入頁）、登入頁可正常開啟（若 DB 連線有問題，這裡通常最先壞，先查 Vercel Logs 與 CA bundle）
-- [ ] 訪客下單（`/guest`）：選尺寸 → 上傳 JPG（確認直接傳到 R2、沒有經過 Vercel）→ 填資料 → 送出，取得訂單編號
+- [ ] 訪客下單（`/guest`）：選尺寸 → 上傳 JPG（確認直接傳到 R2、沒有經過 Vercel）；用 iPhone 在 LINE 裡選 HEIC 照片，確認會轉成 JPG、後台下載是 .jpg→ 填資料 → 送出，取得訂單編號
 - [ ] 訪客以「訂單編號＋手機」查詢到該筆訂單；故意輸入錯誤手機，確認查不到
 - [ ] 會員：用 LINE 登入 → 下單 → 「我的訂單」看得到
 - [ ] 管理員（`ADMIN_LINE_IDS` 設好並重跑 seed 後）：進入 `/admin`；非管理員帳號進 `/admin` 會被擋

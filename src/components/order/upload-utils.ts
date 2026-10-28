@@ -1,34 +1,56 @@
 // Browser-only helpers for direct-to-R2 uploads.
 import { MAX_PHOTO_BYTES } from "@/lib/validators/order";
+import {
+  convertToJpeg,
+  detectPhotoFormat,
+  type PhotoFormat,
+} from "./convert-photo";
+
+const PHOTO_EXTENSIONS = /\.(jpe?g|heic|heif|png|webp)$/;
 
 /** Quick check on name/type before reading the file. Returns an error message or null. */
 export function checkPhotoFile(file: File): string | null {
   const name = file.name.toLowerCase();
-  if (/\.(heic|heif)$/.test(name) || /image\/hei[cf]/.test(file.type)) {
-    return "是 HEIC 格式（iPhone 預設），請先轉成 JPG 再上傳。iPhone 可到「設定 → 相機 → 格式」改成「最相容」。";
-  }
-  if (!/\.jpe?g$/.test(name) || (file.type && file.type !== "image/jpeg")) {
-    return "不是 JPG／JPEG 檔，只接受 JPG／JPEG。";
+  if (!PHOTO_EXTENSIONS.test(name) && !file.type.startsWith("image/")) {
+    return "不是照片檔，可以傳 JPG、HEIC、PNG。";
   }
   if (file.size === 0) return "是空檔案。";
   if (file.size > MAX_PHOTO_BYTES) return "超過 50 MB。";
   return null;
 }
 
-/** Reads the file once: verifies the JPEG signature and returns its SHA-256 (hex). */
-export async function inspectJpeg(
+/** Sniffs the real format; anything but JPEG has to be converted before upload. */
+export async function sniffPhoto(file: File): Promise<PhotoFormat> {
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  return detectPhotoFormat(head);
+}
+
+/** Returns the file to upload (always JPEG) and its SHA-256 (hex). */
+export async function preparePhoto(
   file: File,
-): Promise<{ sha256: string } | { error: string }> {
-  const buf = await file.arrayBuffer();
-  const head = new Uint8Array(buf, 0, Math.min(3, buf.byteLength));
-  if (head[0] !== 0xff || head[1] !== 0xd8 || head[2] !== 0xff) {
-    return { error: "副檔名是 JPG，但內容不是 JPEG 圖片。" };
+  format: PhotoFormat,
+): Promise<{ file: File; sha256: string } | { error: string }> {
+  if (format === "unknown") {
+    return { error: "讀不出照片內容，可以傳 JPG、HEIC、PNG。" };
   }
-  const digest = await crypto.subtle.digest("SHA-256", buf);
+  let jpeg = file;
+  if (format !== "jpeg") {
+    try {
+      jpeg = await convertToJpeg(file, format);
+    } catch {
+      return { error: "這張照片轉成 JPG 失敗，請換一張或先轉成 JPG 再傳。" };
+    }
+    if (jpeg.size > MAX_PHOTO_BYTES)
+      return { error: "轉成 JPG 後超過 50 MB。" };
+  }
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await jpeg.arrayBuffer(),
+  );
   const sha256 = Array.from(new Uint8Array(digest), (b) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
-  return { sha256 };
+  return { file: jpeg, sha256 };
 }
 
 export class UploadError extends Error {

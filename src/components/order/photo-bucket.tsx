@@ -14,6 +14,7 @@ import type { Entry, Notice, PhotoUploader } from "./use-photo-uploader";
 
 const STATUS_LABEL: Record<Entry["status"], string> = {
   hashing: "檢查中…",
+  converting: "轉成 JPG 中…",
   registering: "準備上傳…",
   queued: "等待上傳",
   uploading: "上傳中",
@@ -110,7 +111,7 @@ export function PhotoBucket({
       <input
         ref={inputRef}
         type="file"
-        accept=".jpg,.jpeg,image/jpeg"
+        accept="image/*,.heic,.heif"
         multiple
         hidden
         onChange={(e) => {
@@ -166,7 +167,7 @@ export function PhotoBucket({
           <span className="text-muted text-base leading-relaxed">
             可以一次選很多張
             <br />
-            只收 JPG 檔
+            JPG、HEIC（iPhone）、PNG 都可以
           </span>
           <span className="border-brand text-brand-dark mt-1.5 inline-flex h-12 items-center gap-2 rounded-[14px] border-2 px-5.5 text-[17px] font-bold">
             <PlusIcon className="size-5" />
@@ -428,7 +429,9 @@ function AddTile({
         <PlusIcon className={compact ? "size-5" : "size-6.5"} />
       </span>
       <span className="text-brand-dark text-[17px] font-bold">再加照片</span>
-      {!compact && <span className="text-muted text-[15px]">只收 JPG</span>}
+      {!compact && (
+        <span className="text-muted text-[15px]">JPG、HEIC、PNG</span>
+      )}
     </button>
   );
 }

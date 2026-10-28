@@ -18,7 +18,7 @@ export async function startOrderWithPhotos(page: Page, files: string[]) {
   await expect(
     page.getByRole("heading", { level: 1, name: /照片$/ }),
   ).toBeVisible();
-  // The group's file input (hidden, JPG only)
+  // The group's file input (hidden)
   await page
     .locator('input[type="file"][accept*="jpeg"]')
     .first()

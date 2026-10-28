@@ -2,7 +2,7 @@
 
 # 線上洗照片系統
 
-客人上傳 JPG 照片、選沖印尺寸／張數／周邊商品後下單（`/order` 要 LINE 登入；訪客只能從另外給的 `/guest` 網址下單，網站上不放入口；沒有首頁，`/` 直接轉到 `/order`）；店家在 `/admin` 管理訂單、會員、照片。
+客人上傳照片（HEIC 等在瀏覽器轉成 JPG）、選沖印尺寸／張數／周邊商品後下單（`/order` 要 LINE 登入；訪客只能從另外給的 `/guest` 網址下單，網站上不放入口；沒有首頁，`/` 直接轉到 `/order`）；店家在 `/admin` 管理訂單、會員、照片。
 需求來源是已報價的提案（NT$18,000）：**超出提案範圍的功能，先問再做。**
 業主提供的價目、證件照、付款資訊整理在 `docs/owner-pricing.md`（含尚待確認的項目）。
 
@@ -50,7 +50,7 @@ pnpm db:seed             # 尺寸、價格、周邊商品、管理員
 - 有開 `cacheComponents`：讀 session／`cookies()`／`headers()`／`searchParams`／DB 的元件要包在 `<Suspense>` 裡，不要在 layout 最外層 await。後台每一頁都要在自己的 Suspense 裡呼叫 `requireAdmin()`（layout 不做檢查）
 - 寫入一律走 Server Actions，輸入用 Zod 驗證；每個 action 一開始就檢查身分與資料擁有權（admin action 檢查 role）。`proxy.ts` 的檢查只是第一道防線，不能取代 action 內的檢查
 - 照片和轉帳截圖**絕不經過** Vercel Function（4.5 MB 上限）：上傳用 presigned PUT 直接傳到 R2，下載／ZIP 打包用 presigned GET 在瀏覽器處理
-- 只接受 JPG/JPEG；重複判斷用瀏覽器算出的 SHA-256
+- R2 只存 JPG：客人可傳 JPG／HEIC／PNG／WebP，非 JPG 在瀏覽器轉成 JPG（`convert-photo.ts`，HEIC 解不了才載入 `heic-to`）再上傳；重複判斷用瀏覽器對上傳檔算出的 SHA-256
 - 金額一律用整數（新台幣元），下單時把單價快照到訂單上，不能回頭查目前價格
 - 時間存 UTC（`timestamptz`），顯示時轉 `Asia/Taipei`
 - UI 文字一律用繁體中文（台灣用語）；程式碼、變數名稱、commit message 用英文

@@ -15,11 +15,13 @@ import {
 import type { DraftView } from "@/lib/draft";
 import {
   checkPhotoFile,
-  inspectJpeg,
   mapLimit,
+  preparePhoto,
   putFile,
+  sniffPhoto,
   UploadError,
 } from "./upload-utils";
+import type { PhotoFormat } from "./convert-photo";
 
 const MAX_CONCURRENT_UPLOADS = 3;
 export const CUSTOM_BUCKET = "custom";
@@ -27,6 +29,7 @@ export const ID_PHOTO_BUCKET = "id_photo";
 
 export type EntryStatus =
   | "hashing" // reading file + SHA-256 in the browser
+  | "converting" // HEIC/PNG/WebP → JPEG in the browser
   | "registering" // asking the server for a presigned URL
   | "queued"
   | "uploading"
@@ -391,24 +394,32 @@ export function usePhotoUploader(
     async (bucket: string, fileList: File[]) => {
       const rejected: string[] = [];
       const accepted: Entry[] = [];
+      const formats = new Map<string, PhotoFormat>(); // localId → sniffed format
       for (const file of fileList) {
         const problem = checkPhotoFile(file);
         if (problem) {
           rejected.push(`「${file.name}」${problem}`);
           continue;
         }
+        const format = await sniffPhoto(file);
+        const localId = newLocalId();
+        formats.set(localId, format);
         accepted.push({
-          localId: newLocalId(),
+          localId,
           bucket,
           fileName: file.name,
           size: file.size,
           quantity: 1,
           laminateQuantity: 0,
           removeBackground: false,
-          status: "hashing",
+          status:
+            format === "jpeg" || format === "unknown"
+              ? "hashing"
+              : "converting",
           progress: 0,
           file,
-          previewUrl: URL.createObjectURL(file),
+          // Most browsers can't show HEIC; its preview comes from the converted JPEG
+          previewUrl: format === "heic" ? undefined : URL.createObjectURL(file),
         });
       }
       setNotices((ns) => [
@@ -420,7 +431,7 @@ export function usePhotoUploader(
 
       const inspected = await mapLimit(accepted, 2, async (e) => ({
         e,
-        r: await inspectJpeg(e.file!),
+        r: await preparePhoto(e.file!, formats.get(e.localId)!),
       }));
       const toRegister: Entry[] = [];
       for (const { e, r } of inspected) {
@@ -429,17 +440,29 @@ export function usePhotoUploader(
             ...ns,
             { bucket, message: `「${e.fileName}」${r.error}` },
           ]);
-          URL.revokeObjectURL(e.previewUrl!);
+          if (e.previewUrl) URL.revokeObjectURL(e.previewUrl);
           setEntries((list) => list.filter((x) => x.localId !== e.localId));
           continue;
+        }
+        let ready: Entry = { ...e, sha256: r.sha256 };
+        if (r.file !== e.file) {
+          // Converted: upload and preview the JPEG, not the original
+          if (e.previewUrl) URL.revokeObjectURL(e.previewUrl);
+          ready = {
+            ...ready,
+            file: r.file,
+            fileName: r.file.name,
+            size: r.file.size,
+            previewUrl: URL.createObjectURL(r.file),
+          };
         }
         // Same file as one left unfinished before a reload: resume that photo instead of adding a new one
         const missing = entriesRef.current.find(
           (x) =>
             x.bucket === bucket &&
             x.status === "missing" &&
-            x.sha256 === r.sha256 &&
-            x.size === e.size,
+            x.sha256 === ready.sha256 &&
+            x.size === ready.size,
         );
         if (missing?.photoId) {
           setEntries((list) =>
@@ -449,8 +472,8 @@ export function usePhotoUploader(
                 x.localId === missing.localId
                   ? {
                       ...x,
-                      file: e.file,
-                      previewUrl: e.previewUrl,
+                      file: ready.file,
+                      previewUrl: ready.previewUrl,
                       status: "registering",
                     }
                   : x,
@@ -470,8 +493,14 @@ export function usePhotoUploader(
           );
           continue;
         }
-        const ready = { ...e, sha256: r.sha256 };
-        patch(e.localId, { sha256: r.sha256 });
+        patch(e.localId, {
+          status: "hashing",
+          sha256: ready.sha256,
+          file: ready.file,
+          fileName: ready.fileName,
+          size: ready.size,
+          previewUrl: ready.previewUrl,
+        });
         toRegister.push(ready);
       }
       const remaining = toRegister.filter((e) =>
