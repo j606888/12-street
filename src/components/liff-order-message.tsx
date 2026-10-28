@@ -9,8 +9,8 @@ const CHAT_CONTEXTS = new Set(["utou", "room", "group"]);
 /**
  * Opened through LIFF from a LINE chat (e.g. the shop's rich menu): posts the
  * order number into that chat once, so the order shows up in the conversation
- * with the shop. Needs the `chat_message.write` scope on the LIFF app.
- * Elsewhere it does nothing.
+ * with the shop, and the shop's webhook (/api/line/webhook) replies to it.
+ * Needs the `chat_message.write` scope on the LIFF app. Elsewhere it does nothing.
  */
 export function LiffOrderMessage({
   orderNo,

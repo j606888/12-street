@@ -53,6 +53,9 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
 | `BETTER_AUTH_URL` | 必要，設正式網址 | 視需要 | Better Auth 的網站網址（見下方注意事項） |
 | `LINE_CLIENT_ID` | 必要 | 視需要 | LINE Login channel ID |
 | `LINE_CLIENT_SECRET` | 必要 | 視需要 | LINE Login channel secret |
+| `NEXT_PUBLIC_LIFF_ID` | 必要 | 不需要 | LIFF app ID（`2006939857-pYqcSNmE`），在 LINE 裡自動登入 |
+| `LINE_MESSAGING_CHANNEL_SECRET` | 必要 | 不需要 | 官方帳號 Messaging API channel 的 secret，驗證 webhook；沒設的話 webhook 一律回 401 |
+| `LINE_MESSAGING_ACCESS_TOKEN` | 必要 | 不需要 | 同一個 channel 的 long-lived channel access token，用來回覆訊息 |
 | `ADMIN_LINE_IDS` | 不需要 | 不需要 | 只有 `pnpm db:seed` 會讀，在本機執行時設定即可 |
 | `R2_ACCOUNT_ID` | 必要 | 視需要 | Cloudflare 帳號 ID，組 R2 endpoint |
 | `R2_ACCESS_KEY_ID` | 必要 | 視需要 | R2 API token 的 access key |
@@ -75,6 +78,10 @@ Vercel 的 build 指令只有 `next build`，**不會**跑 migration，所以每
   - 本機開發另有 `http://localhost:3000/api/auth/callback/line`
 - [ ] Channel 狀態改為 Published（未發布時只有 channel 管理者／測試者能登入）
 - [ ] 目前只要求 `openid`、`profile` scope（`src/lib/auth.ts`），不需要向 LINE 申請 email 權限
+- [x] LINE Login channel「12街影像生活工場」和官方帳號 @832zpene 的 Messaging API channel 在同一個 provider（12Street | Elaine），兩邊的 LINE user ID 才會一樣，webhook 才認得出下單的人
+- [x] LIFF app「12 Street 線上洗照片」：endpoint `https://12-street.com`，scope `openid`、`profile`、`chat_message.write`（2026-10-28 加上 `chat_message.write`）
+- [x] 圖文選單：B「檔案上傳」→ `https://liff.line.me/2006939857-pYqcSNmE/order`、C「訂單查詢」→ `https://liff.line.me/2006939857-pYqcSNmE/orders/mine`（2026-10-28）。注意圖文選單的使用期間到 2026/12/31
+- [x] Messaging API channel → Webhook URL 設成 `https://12-street.com/api/line/webhook`，打開「Use webhook」，按 Verify 要成功（先部署、先設好上面兩個 `LINE_MESSAGING_*` env）（2026-10-28）
 
 ## 6. 部署與網域
 

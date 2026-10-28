@@ -24,7 +24,7 @@ pnpm db:seed             # 尺寸、價格、周邊商品、管理員
 ```
 
 ## 資料夾結構
-- `src/app/(shop)/` 前台、`src/app/admin/` 後台、`src/app/api/` route handlers（auth、cron）
+- `src/app/(shop)/` 前台、`src/app/admin/` 後台、`src/app/api/` route handlers（auth、cron、LINE webhook）
 - `src/db/schema/` Drizzle schema、`src/db/migrations/` 產生出來的 migration、`src/db/seed.ts`
 - `src/lib/` server 端共用（`auth.ts`、`r2.ts`、`db.ts`、`validators/`）
 - `src/components/` UI 元件；`src/actions/` Server Actions

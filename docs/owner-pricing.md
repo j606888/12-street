@@ -42,7 +42,7 @@
 
 - LINE 登入的會員從 `/order` 下單時，預設**看不到**現金；店家在後台「會員資料 → 付款方式」逐一開啟。店內 QR code 的 `/guest` 網址一律可以選現金（已登入的會員從那裡進來也可以）
 - LINE 好友連結、銀行帳號、末五碼／轉帳截圖都在**訂單送出後**才出現（完成頁和訂單頁，Email 裡的連結也回得去）；銀行轉帳的訂單送出時是「未付款」，客人補填後才變「待確認」
-- 從 LIFF（LINE 聊天室裡開的頁面）下單成功後，會自動在那個聊天室傳一則「訂單成立＋訂單編號」的訊息（LIFF app 要開 `chat_message.write` scope）
+- 從 LIFF（LINE 聊天室裡開的頁面，例如圖文選單 B「檔案上傳」、C「訂單查詢」）下單成功後，會自動以客人的名義在那個聊天室傳一則「訂單成立＋訂單編號」的訊息（LIFF app 已開 `chat_message.write` scope），官方帳號再由 webhook（`/api/line/webhook`）回「收到訂單了！訂單編號：…」。回覆用 reply，不算每月訊息額度；只回給下單的那位會員本人
 
 付款資訊放在 env：`NEXT_PUBLIC_LINE_PAY_URL`、`NEXT_PUBLIC_BANK_ACCOUNT`（本機 `.env.local`，正式環境要設在 Vercel）。
 
