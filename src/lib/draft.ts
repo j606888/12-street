@@ -196,6 +196,7 @@ export async function loadCatalog() {
     db
       .select({
         id: products.id,
+        code: products.code,
         name: products.name,
         description: products.description,
         price: products.price,

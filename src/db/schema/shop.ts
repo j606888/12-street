@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  date,
   index,
   integer,
   pgEnum,
@@ -251,3 +252,16 @@ export const lookupFailures = pgTable(
   },
   (t) => [index("lookup_failures_order_no_idx").on(t.orderNo, t.createdAt)],
 );
+
+// ---- Shop calendar (營業日) ----
+
+// Days that differ from the default week (Sat/Sun closed), set on
+// /admin/calendar. `day` is a Taipei calendar date, not a point in time.
+export const shopDays = pgTable("shop_days", {
+  day: date("day", { mode: "string" }).primaryKey(),
+  open: boolean("open").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});

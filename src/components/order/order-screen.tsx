@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { LineLoginLink } from "@/components/line-login";
+import { ClosedNoticeDialog } from "@/components/order/closed-notice";
 import { OrderForm } from "@/components/order/order-form";
 import { ShopFooter } from "@/components/shop-footer";
 import { ShopHeader } from "@/components/shop-header";
@@ -13,6 +14,7 @@ import {
   loadDraft,
   memberAllowsCash,
 } from "@/lib/draft";
+import { loadClosedNotice } from "@/lib/shop-calendar";
 
 /**
  * The order flow page. `/order` is for LINE members only; `/guest` is the
@@ -77,26 +79,31 @@ async function MemberChip({ guest }: { guest?: boolean }) {
 async function OrderLoader({ guest }: { guest?: boolean }) {
   const owner = await getOwner();
   if (owner.kind !== "member" && !guest) redirect("/login?next=/order");
-  const [catalog, draftId, email, cashAllowed] = await Promise.all([
-    loadCatalog(),
-    findDraftId(owner),
-    owner.kind === "member" ? lastContactEmail(owner.userId) : null,
-    // The in-store /guest link always offers cash, even to signed-in members
-    guest || (owner.kind === "member" && memberAllowsCash(owner.userId)),
-  ]);
+  const [catalog, draftId, email, cashAllowed, closedNotice] =
+    await Promise.all([
+      loadCatalog(),
+      findDraftId(owner),
+      owner.kind === "member" ? lastContactEmail(owner.userId) : null,
+      // The in-store /guest link always offers cash, even to signed-in members
+      guest || (owner.kind === "member" && memberAllowsCash(owner.userId)),
+      loadClosedNotice(),
+    ]);
   const draft = draftId ? await loadDraft(draftId) : null;
   if (!catalog.sizes.length) return <p>目前沒有可選的沖印尺寸，請稍後再試。</p>;
   return (
-    <OrderForm
-      catalog={catalog}
-      draft={draft}
-      member={
-        owner.kind === "member"
-          ? { name: owner.name, phone: owner.phone, email }
-          : null
-      }
-      cashAllowed={cashAllowed}
-      guestLink={guest}
-    />
+    <>
+      {closedNotice && <ClosedNoticeDialog notice={closedNotice} />}
+      <OrderForm
+        catalog={catalog}
+        draft={draft}
+        member={
+          owner.kind === "member"
+            ? { name: owner.name, phone: owner.phone, email }
+            : null
+        }
+        cashAllowed={cashAllowed}
+        guestLink={guest}
+      />
+    </>
   );
 }

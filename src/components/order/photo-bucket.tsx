@@ -47,8 +47,8 @@ export function PhotoBucket({
   quantityUnit?: "張" | "組";
   /** Per-print lamination (護貝) price; pass it to let each photo pick how many prints to laminate. */
   laminationPrice?: number;
-  /** ID-photo sets (證件照); pass them to let each photo pick its own set. */
-  idPhotoSets?: { id: number; name: string }[];
+  /** ID-photo sets (證件照) in labelled sections; pass them to let each photo pick its own set. */
+  idPhotoSets?: { label: string; sets: { id: number; name: string }[] }[];
   /** 去背 price per photo; pass it to give each photo a 去背 checkbox. */
   backgroundRemovalPrice?: number;
   /** Offer a confirmed "remove every photo" next to the count. */
@@ -285,16 +285,28 @@ export function PhotoBucket({
                 )}
                 {idPhotoSets && (
                   // A native select can't wrap long names in a narrow tile, so
-                  // show the name in a wrapping label and lay the select over it
-                  <div className="border-field bg-card focus-within:outline-brand relative mx-1 mt-1 mb-1.5 flex min-h-11 items-center gap-1 rounded-xl border-2 py-1.5 pr-1.5 pl-2.5 focus-within:outline-2 focus-within:outline-offset-1">
+                  // show the name in a wrapping label and lay the select over it.
+                  // New photos have no set yet, so that state stands out.
+                  <div
+                    className={`focus-within:outline-brand relative mx-1 mt-1 mb-1.5 flex min-h-11 items-center gap-1 rounded-xl border-2 py-1.5 pr-1.5 pl-2.5 focus-within:outline-2 focus-within:outline-offset-1 ${
+                      e.productId === undefined
+                        ? "border-brand bg-brand-tint text-brand-dark"
+                        : "border-field bg-card"
+                    }`}
+                  >
                     <span
                       aria-hidden="true"
                       className="min-w-0 flex-1 text-[15px] leading-snug font-bold"
                     >
-                      {idPhotoSets.find((s) => s.id === e.productId)?.name ??
-                        "選種類"}
+                      {idPhotoSets
+                        .flatMap((g) => g.sets)
+                        .find((s) => s.id === e.productId)?.name ?? "請選尺寸"}
                     </span>
-                    <ChevronDownIcon className="text-muted size-4 shrink-0" />
+                    <ChevronDownIcon
+                      className={`size-4 shrink-0 ${
+                        e.productId === undefined ? "" : "text-muted"
+                      }`}
+                    />
                     <select
                       value={e.productId ?? ""}
                       onChange={(ev) =>
@@ -303,18 +315,22 @@ export function PhotoBucket({
                           Number(ev.target.value),
                         )
                       }
-                      aria-label={`${e.fileName} 證件照種類`}
+                      aria-label={`${e.fileName} 證件照尺寸`}
                       className="absolute inset-0 size-full cursor-pointer opacity-0"
                     >
                       {e.productId === undefined && (
                         <option value="" disabled>
-                          選種類
+                          請選尺寸
                         </option>
                       )}
-                      {idPhotoSets.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
+                      {idPhotoSets.map((g) => (
+                        <optgroup key={g.label} label={g.label}>
+                          {g.sets.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                   </div>
@@ -339,7 +355,7 @@ export function PhotoBucket({
                     />
                     <span
                       aria-hidden="true"
-                      className="border-field peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:outline-brand grid size-5.5 shrink-0 place-items-center rounded-md border-2 bg-card text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2"
+                      className="border-field peer-checked:border-brand peer-checked:bg-brand peer-focus-visible:outline-brand bg-card grid size-5.5 shrink-0 place-items-center rounded-md border-2 text-white peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2"
                     >
                       {e.removeBackground && <CheckIcon className="size-4" />}
                     </span>
@@ -417,8 +433,14 @@ function AddTile({
   );
 }
 
-/** "全部拿掉" with an inline yes/no, so one tap can't wipe a whole size. */
-function RemoveAll({ onConfirm }: { onConfirm: () => void }) {
+/** "全部拿掉" with an inline yes/no, so one tap can't wipe a whole size (or order). */
+export function RemoveAll({
+  label = "全部拿掉",
+  onConfirm,
+}: {
+  label?: string;
+  onConfirm: () => void;
+}) {
   const [asking, setAsking] = useState(false);
   if (!asking)
     return (
@@ -427,12 +449,12 @@ function RemoveAll({ onConfirm }: { onConfirm: () => void }) {
         onClick={() => setAsking(true)}
         className="-my-2 min-h-11 font-bold underline underline-offset-4"
       >
-        全部拿掉
+        {label}
       </button>
     );
   return (
     <span className="-my-2 flex items-center gap-3">
-      <span className="text-foreground font-bold">確定全部拿掉？</span>
+      <span className="text-foreground font-bold">確定{label}？</span>
       <button
         type="button"
         onClick={onConfirm}

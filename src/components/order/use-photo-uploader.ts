@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  clearDraft,
   confirmPhotos,
   createGroup,
   deleteGroup,
@@ -109,7 +110,6 @@ function entriesFromDraft(draft: DraftView | null): {
 export function usePhotoUploader(
   draft: DraftView | null,
   defaultSizeId: number,
-  defaultIdPhotoSetId: number | undefined,
 ) {
   const [initial] = useState(() => {
     const restored = entriesFromDraft(draft);
@@ -304,6 +304,23 @@ export function usePhotoUploader(
     if (serverId) await deleteGroup({ groupId: serverId });
   }, []);
 
+  /** Drops every photo and size group, here and in the saved draft. */
+  const clearAll = useCallback(async () => {
+    for (const e of entriesRef.current) {
+      inFlight.current.get(e.localId)?.();
+      if (e.file && e.previewUrl) URL.revokeObjectURL(e.previewUrl);
+    }
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    dirtyOptions.current.clear();
+    setEntries([]);
+    setNotices([]);
+    setGroups([{ key: newLocalId(), printSizeId: defaultSizeId }]);
+    // A group still being created would otherwise outlive the clear
+    await Promise.allSettled(groupIdPromises.current.values());
+    groupIdPromises.current.clear();
+    await clearDraft();
+  }, [defaultSizeId]);
+
   // ---- Registering (create pending rows + presigned URLs) ----
   const register = useCallback(
     async (bucket: string, batch: Entry[]) => {
@@ -316,7 +333,7 @@ export function usePhotoUploader(
           size: e.size,
           sha256: e.sha256!,
         }));
-        const registeredSetId = batch[0].productId ?? defaultIdPhotoSetId;
+        const registeredSetId = batch[0].productId;
         const res =
           bucket === CUSTOM_BUCKET
             ? await registerPhotos({ kind: "custom", files })
@@ -367,7 +384,7 @@ export function usePhotoUploader(
           patch(e.localId, { status: "failed", error: message });
       }
     },
-    [patch, ensureGroupId, markDirty, defaultIdPhotoSetId],
+    [patch, ensureGroupId, markDirty],
   );
 
   const addFiles = useCallback(
@@ -390,8 +407,6 @@ export function usePhotoUploader(
           removeBackground: false,
           status: "hashing",
           progress: 0,
-          productId:
-            bucket === ID_PHOTO_BUCKET ? defaultIdPhotoSetId : undefined,
           file,
           previewUrl: URL.createObjectURL(file),
         });
@@ -466,7 +481,7 @@ export function usePhotoUploader(
         await register(bucket, remaining.slice(i, i + 100));
       }
     },
-    [patch, register, defaultIdPhotoSetId],
+    [patch, register],
   );
 
   const retry = useCallback(
@@ -560,6 +575,7 @@ export function usePhotoUploader(
     addGroup,
     updateGroupOptions,
     removeGroup,
+    clearAll,
     addFiles,
     retry,
     remove,

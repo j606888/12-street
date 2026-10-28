@@ -56,6 +56,13 @@ export type MemberFilter = z.output<typeof memberFilterInput>;
 
 export const photoViewInput = z.enum(PHOTO_VIEWS).catch("soon");
 
+/** Calendar month from searchParams, e.g. "2026-11"; anything else → this month. */
+export const calendarMonthInput = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+  .optional()
+  .catch(undefined);
+
 const orderId = z.uuid();
 const userId = z.string().min(1).max(64);
 
@@ -87,6 +94,10 @@ export const setMemberRoleInput = z.object({
 export const setMemberCashInput = z.object({
   userId,
   allowCash: z.boolean(),
+});
+export const setShopDayInput = z.object({
+  day: z.iso.date(),
+  open: z.boolean(),
 });
 export const removeMemberTagInput = z.object({
   userId,

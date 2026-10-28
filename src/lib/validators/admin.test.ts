@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   addMemberTagInput,
+  calendarMonthInput,
   firstParam,
   memberFilterInput,
   orderFilterInput,
   photoViewInput,
+  setShopDayInput,
   updateMemberInput,
   updateMemberNoteInput,
 } from "./admin";
@@ -111,5 +113,29 @@ describe("firstParam", () => {
     expect(firstParam(["a", "b"])).toBe("a");
     expect(firstParam("a")).toBe("a");
     expect(firstParam(undefined)).toBeUndefined();
+  });
+});
+
+describe("calendarMonthInput", () => {
+  it("keeps a valid month and drops anything else", () => {
+    expect(calendarMonthInput.parse("2026-11")).toBe("2026-11");
+    expect(calendarMonthInput.parse("2026-13")).toBeUndefined();
+    expect(calendarMonthInput.parse("2026-11-01")).toBeUndefined();
+    expect(calendarMonthInput.parse(undefined)).toBeUndefined();
+  });
+});
+
+describe("setShopDayInput", () => {
+  it("needs a real date and a boolean", () => {
+    expect(setShopDayInput.parse({ day: "2026-11-11", open: false })).toEqual({
+      day: "2026-11-11",
+      open: false,
+    });
+    expect(
+      setShopDayInput.safeParse({ day: "2026-02-30", open: true }).success,
+    ).toBe(false);
+    expect(
+      setShopDayInput.safeParse({ day: "2026-11-11", open: "yes" }).success,
+    ).toBe(false);
   });
 });

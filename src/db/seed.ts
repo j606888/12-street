@@ -39,31 +39,39 @@ const PRODUCTS = [
   },
   {
     ...ID_PHOTO,
-    code: "id-2in4-1in5",
-    name: "證件照：一般兩吋 4 張＋一吋 5 張",
-    description: "兩吋＋駕照、殘障手冊用的一吋",
+    code: "id-1in-10",
+    name: "證件照：一吋 10 張",
+    description: "駕照、殘障手冊",
     sortOrder: 3,
+  },
+  // Combos (組合價 in the per-photo menu, see ID_SET_GROUPS in order-form.tsx)
+  {
+    ...ID_PHOTO,
+    code: "id-2in-big4-2in4",
+    name: "證件照：大頭兩吋 4 張＋一般兩吋 4 張",
+    description: "大頭兩吋＋一般兩吋",
+    sortOrder: 4,
   },
   {
     ...ID_PHOTO,
     code: "id-2in-big4-1in5",
     name: "證件照：大頭兩吋 4 張＋一吋 5 張",
     description: "大頭兩吋＋駕照、殘障手冊用的一吋",
-    sortOrder: 4,
+    sortOrder: 5,
   },
   {
     ...ID_PHOTO,
-    code: "id-1in-10",
-    name: "證件照：一吋 10 張",
-    description: "駕照、殘障手冊",
-    sortOrder: 5,
+    code: "id-2in4-1in5",
+    name: "證件照：一般兩吋 4 張＋一吋 5 張",
+    description: "兩吋＋駕照、殘障手冊用的一吋",
+    sortOrder: 6,
   },
   {
     ...ID_PHOTO,
     code: "id-5x5",
     name: "證件照：5cm×5cm 4 張", // piece count is a placeholder until the owner confirms
     description: "美國簽證、印度簽證",
-    sortOrder: 6,
+    sortOrder: 7,
   },
   {
     ...ID_PHOTO,
@@ -71,7 +79,7 @@ const PRODUCTS = [
     name: "證件照：其他",
     description: "特殊尺寸、修圖（價格另議）",
     price: 0, // quoted by the shop afterwards
-    sortOrder: 7,
+    sortOrder: 8,
   },
 ];
 

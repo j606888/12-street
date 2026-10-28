@@ -184,7 +184,7 @@ export async function registerPhotos(
     orderId = group.orderId;
     groupId = group.id;
   } else {
-    if (data.kind === "id_photo") {
+    if (data.kind === "id_photo" && data.productId !== undefined) {
       if (!(await activeIdPhotoSets([data.productId])).has(data.productId))
         return { ok: false, error: "沒有這個證件照組合" };
       productId = data.productId;
@@ -276,6 +276,19 @@ export async function deletePhoto(input: unknown): Promise<Result> {
   if (!photo) return NO_DRAFT;
   await db.delete(photos).where(eq(photos.id, photo.id));
   await deleteObjects([photo.r2Key]);
+  return { ok: true };
+}
+
+/** 全部刪除 on the size list: every photo and size group in the caller's draft. */
+export async function clearDraft(): Promise<Result> {
+  const draftId = await findDraftId(await getOwner());
+  if (!draftId) return { ok: true }; // nothing saved yet
+  const rows = await db
+    .delete(photos)
+    .where(eq(photos.orderId, draftId))
+    .returning({ r2Key: photos.r2Key });
+  await db.delete(orderGroups).where(eq(orderGroups.orderId, draftId));
+  await deleteObjects(rows.map((r) => r.r2Key));
   return { ok: true };
 }
 
@@ -439,6 +452,8 @@ export async function submitOrder(input: unknown): Promise<Result> {
       // Snapshot add-on products and ID-photo sets (one line per ID photo)
       const wanted = data.items.filter((i) => i.quantity > 0);
       const idPhotos = photoRows.filter((p) => p.kind === "id_photo");
+      if (idPhotos.some((p) => !p.productId))
+        throw new SubmitError("有證件照還沒選尺寸，請回上一步選好");
       const productIds = [
         ...new Set([
           ...wanted.map((i) => i.productId),

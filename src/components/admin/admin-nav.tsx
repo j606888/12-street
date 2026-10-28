@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  CalendarIcon,
   HomeIcon,
   ImageIcon,
   ReceiptIcon,
@@ -14,6 +15,7 @@ const ITEMS = [
   { href: "/admin/orders", label: "訂單", Icon: ReceiptIcon },
   { href: "/admin/members", label: "會員", Icon: UsersIcon },
   { href: "/admin/photos", label: "照片保存", Icon: ImageIcon },
+  { href: "/admin/calendar", label: "營業日", Icon: CalendarIcon },
 ] as const;
 
 function isActive(href: string, pathname: string) {

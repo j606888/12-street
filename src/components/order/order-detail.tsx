@@ -117,8 +117,19 @@ function PaymentSection({ order }: { order: OrderRow }) {
   );
 }
 
-/** Line items with lamination, minimum charges, ID photos and custom work. */
-export async function OrderLines({ order }: { order: OrderRow }) {
+/**
+ * Line items with lamination, minimum charges, ID photos and custom work.
+ * Customers never see a separate top-up: it goes into the first size that has
+ * prints (or laminated prints), marked 含最低收費. `showTopUp` lists it on its
+ * own row for the shop instead.
+ */
+export async function OrderLines({
+  order,
+  showTopUp = false,
+}: {
+  order: OrderRow;
+  showTopUp?: boolean;
+}) {
   const { groups, items, customPhotoCount } = await loadOrderLines(order.id);
   const priced = groups.map((g) => ({
     unitPrice: g.unitPrice ?? 0,
@@ -130,62 +141,85 @@ export async function OrderLines({ order }: { order: OrderRow }) {
     groups.map((g, i) => [g.id, groupCharges(priced[i])]),
   );
   const totals = printCharges(priced);
+  const printingTopUpAt = showTopUp
+    ? -1
+    : groups.findIndex((g) => g.prints > 0);
+  const laminationTopUpAt = showTopUp
+    ? -1
+    : groups.findIndex(
+        (g) => g.laminationUnitPrice !== null && g.laminatedPrints > 0,
+      );
 
   return (
     <table className="w-full text-base">
       <tbody>
-        {groups.map((g) => {
+        {groups.map((g, i) => {
           const unitPrice = g.unitPrice ?? 0;
           const c = charged.get(g.id)!;
+          const printingTopUp =
+            i === printingTopUpAt ? totals.printingTopUp : 0;
+          const laminationTopUp =
+            i === laminationTopUpAt ? totals.laminationTopUp : 0;
           return (
             <Fragment key={g.id}>
               <tr className="border-line border-b">
                 <td className="py-2">{g.label}</td>
                 <td className="text-muted py-2">
                   {g.photoCount} 張照片，共印 {g.prints} 張 × {fmt(unitPrice)}
+                  {printingTopUp > 0 && "・含最低收費"}
                 </td>
-                <td className="py-2 text-right">{fmt(c.printing)}</td>
+                <td className="py-2 text-right">
+                  {fmt(c.printing + printingTopUp)}
+                </td>
               </tr>
               {g.laminationUnitPrice !== null && (
                 <tr className="border-line border-b">
                   <td className="py-2 pl-4">護貝</td>
                   <td className="text-muted py-2">
                     {g.laminatedPrints} 張 × {fmt(g.laminationUnitPrice)}
+                    {laminationTopUp > 0 && "・含最低收費"}
                   </td>
-                  <td className="py-2 text-right">{fmt(c.lamination)}</td>
+                  <td className="py-2 text-right">
+                    {fmt(c.lamination + laminationTopUp)}
+                  </td>
                 </tr>
               )}
             </Fragment>
           );
         })}
-        {totals.printingTopUp > 0 && (
+        {showTopUp && totals.printingTopUp > 0 && (
           <MinimumRow what="洗照片" amount={totals.printingTopUp} />
         )}
-        {totals.laminationTopUp > 0 && (
+        {showTopUp && totals.laminationTopUp > 0 && (
           <MinimumRow what="護貝" amount={totals.laminationTopUp} />
         )}
-        {items.map((i) => (
-          <Fragment key={i.id}>
-            <tr className="border-line border-b">
-              <td className="py-2">{i.name}</td>
-              <td className="text-muted py-2">
-                {i.quantity} {i.photoId ? "組" : "個"} × {fmt(i.unitPrice)}
-              </td>
-              <td className="py-2 text-right">
-                {fmt(i.unitPrice * i.quantity)}
-              </td>
-            </tr>
-            {i.backgroundRemovalPrice != null && (
+        {items.map((i) => {
+          // 證件照：其他 is priced by the shop afterwards
+          const quoted = !!i.photoId && i.unitPrice === 0;
+          return (
+            <Fragment key={i.id}>
               <tr className="border-line border-b">
-                <td className="py-2 pl-4">去背</td>
-                <td className="text-muted py-2">1 張</td>
-                <td className="py-2 text-right">
-                  {fmt(i.backgroundRemovalPrice)}
+                <td className="py-2">{i.name}</td>
+                <td className="text-muted py-2">
+                  {i.quantity} {i.photoId ? "組" : "個"}
+                  {!quoted && ` × ${fmt(i.unitPrice)}`}
+                </td>
+                <td className={`py-2 text-right ${quoted ? "text-muted" : ""}`}>
+                  {quoted ? "價格另議" : fmt(i.unitPrice * i.quantity)}
                 </td>
               </tr>
-            )}
-          </Fragment>
-        ))}
+              {i.backgroundRemovalPrice != null && (
+                <tr className="border-line border-b">
+                  <td className="py-2 pl-4">去背</td>
+                  <td className="text-muted py-2">1 張</td>
+                  <td className="py-2 text-right">
+                    {fmt(i.backgroundRemovalPrice)}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          );
+        })}
         {(customPhotoCount > 0 || order.customNote) && (
           <tr className="border-line border-b">
             <td className="py-2">客製化製作</td>

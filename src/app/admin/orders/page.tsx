@@ -1,7 +1,10 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AdvanceStatusButton } from "@/components/admin/advance-status-button";
+import {
+  AdvanceStatusButton,
+  CancelOrderButton,
+} from "@/components/admin/advance-status-button";
 import { Pagination } from "@/components/admin/pagination";
 import {
   OrderStatusBadge,
@@ -238,12 +241,18 @@ async function Orders({
                       <OrderStatusBadge status={o.status} />
                     </td>
                     <td className={`${td} py-2.5 text-right whitespace-nowrap`}>
-                      <AdvanceStatusButton
-                        orderId={o.id}
-                        status={o.status}
-                        paymentMethod={o.paymentMethod}
-                        paymentStatus={o.paymentStatus}
-                      />
+                      <span className="inline-flex items-start justify-end gap-2">
+                        {/* Quick cancel next to 開始製作, without opening the order */}
+                        {o.status === "submitted" && (
+                          <CancelOrderButton orderId={o.id} compact />
+                        )}
+                        <AdvanceStatusButton
+                          orderId={o.id}
+                          status={o.status}
+                          paymentMethod={o.paymentMethod}
+                          paymentStatus={o.paymentStatus}
+                        />
+                      </span>
                     </td>
                   </tr>
                 ))}

@@ -65,7 +65,8 @@ export const registerPhotosInput = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("id_photo"),
-    productId,
+    // New ID photos may not have a set yet; it's picked per photo afterwards
+    productId: productId.optional(),
     files: z.array(fileMeta).min(1).max(20),
   }),
 ]);

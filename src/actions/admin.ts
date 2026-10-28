@@ -10,6 +10,7 @@ import { sendOrderEmail } from "@/lib/email";
 import { purgePhotoRows } from "@/lib/cleanup";
 import { presignGet } from "@/lib/r2";
 import { getAdmin } from "@/lib/session";
+import { isClosedByDefault, taipeiToday } from "@/lib/shop-days";
 import {
   addMemberTagInput,
   orderIdInput,
@@ -17,6 +18,7 @@ import {
   removeMemberTagInput,
   setMemberCashInput,
   setMemberRoleInput,
+  setShopDayInput,
   updateMemberInput,
   updateMemberNoteInput,
   updateOrderStatusInput,
@@ -28,6 +30,7 @@ import {
   memberTags,
   orders,
   photos,
+  shopDays,
   user,
   userTags,
 } from "@/db/schema";
@@ -294,7 +297,10 @@ export async function setMemberRole(input: unknown): Promise<Result> {
   const { data, error } = parse(setMemberRoleInput, input);
   if (!data) return { ok: false, error };
   if (data.userId === admin.id && data.role !== "admin")
-    return { ok: false, error: "不能取消自己的管理員權限，要取消請找其他管理員" };
+    return {
+      ok: false,
+      error: "不能取消自己的管理員權限，要取消請找其他管理員",
+    };
 
   const updated = await db
     .update(user)
@@ -350,4 +356,27 @@ export async function updateMemberNote(
     if (isForeignKeyError(err)) return NO_MEMBER;
     throw err;
   }
+}
+
+/** Sets one day open or closed on the shop calendar (營業日). */
+export async function setShopDay(input: unknown): Promise<Result> {
+  if (!(await getAdmin())) return FORBIDDEN;
+  const { data, error } = parse(setShopDayInput, input);
+  if (!data) return { ok: false, error };
+  if (data.day < taipeiToday(new Date()))
+    return { ok: false, error: "過去的日子不能改" };
+
+  // Only days that differ from the default week (Sat/Sun closed) are stored
+  if (data.open === !isClosedByDefault(data.day))
+    await db.delete(shopDays).where(eq(shopDays.day, data.day));
+  else
+    await db
+      .insert(shopDays)
+      .values(data)
+      .onConflictDoUpdate({
+        target: shopDays.day,
+        set: { open: data.open, updatedAt: new Date() },
+      });
+  refresh();
+  return { ok: true };
 }

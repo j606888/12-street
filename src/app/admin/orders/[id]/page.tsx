@@ -203,7 +203,7 @@ async function AdminOrder({
         <div className="grid min-w-0 flex-[999_1_560px] grid-cols-1 gap-5">
           <Card title="明細">
             <div className="overflow-x-auto px-5 py-3">
-              <OrderLines order={order} />
+              <OrderLines order={order} showTopUp />
             </div>
           </Card>
 

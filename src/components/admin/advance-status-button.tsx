@@ -125,8 +125,14 @@ export function AdvanceStatusButton({
   );
 }
 
-/** Two-step 取消這筆訂單. */
-export function CancelOrderButton({ orderId }: { orderId: string }) {
+/** Two-step 取消這筆訂單; `compact` is the small 取消 button for a row of the order list. */
+export function CancelOrderButton({
+  orderId,
+  compact,
+}: {
+  orderId: string;
+  compact?: boolean;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -141,7 +147,9 @@ export function CancelOrderButton({ orderId }: { orderId: string }) {
 
   return confirming ? (
     <span className="flex flex-wrap items-center justify-end gap-2 text-[13px]">
-      <span className="text-danger-fg">確定要取消這筆訂單嗎？</span>
+      <span className="text-danger-fg">
+        {compact ? "確定取消？" : "確定要取消這筆訂單嗎？"}
+      </span>
       <button
         type="button"
         onClick={cancel}
@@ -167,9 +175,13 @@ export function CancelOrderButton({ orderId }: { orderId: string }) {
           setError(null);
           setConfirming(true);
         }}
-        className="text-danger-fg py-1.5 text-[13px] hover:underline"
+        className={
+          compact
+            ? btn.danger
+            : "text-danger-fg py-1.5 text-[13px] hover:underline"
+        }
       >
-        取消這筆訂單
+        {compact ? "取消" : "取消這筆訂單"}
       </button>
       {error && (
         <span role="alert" className="text-danger-fg text-xs">

@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { submitOrder } from "@/actions/order";
 import {
   ArrowRightIcon,
   BookIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   IdCardIcon,
+  InfoIcon,
 } from "@/components/icons";
 import {
   PAYMENT_LABEL,
@@ -24,7 +26,7 @@ import {
   printCharges,
 } from "@/lib/pricing";
 import { emailSchema, phoneSchema } from "@/lib/validators/order";
-import { PhotoBucket, Stepper } from "./photo-bucket";
+import { PhotoBucket, RemoveAll, Stepper } from "./photo-bucket";
 import {
   CUSTOM_BUCKET,
   type Entry,
@@ -54,6 +56,8 @@ type FieldErrors = Partial<Record<FieldKey, string>>;
 const fieldId = (key: FieldKey) => `checkout-${key}`;
 
 const fmt = (n: number) => `$${n.toLocaleString("zh-TW")}`;
+/** Shown instead of an amount for what the shop prices afterwards (證件照：其他, 客製化) */
+const QUOTED = "價格另議";
 
 /** Outline drawn on each size button, in px, to show the print's proportions. */
 const SIZE_BOX: Record<string, [width: number, height: number]> = {
@@ -65,6 +69,25 @@ const SIZE_BOX: Record<string, [width: number, height: number]> = {
   "6x8": [27, 36],
   "8x10": [36, 45],
   "8x12": [36, 54],
+};
+
+/**
+ * Each size in cm for the 「各尺寸是幾公分？」 table. Converted from inches for
+ * now; the shop is to confirm the real figures (docs/owner-pricing.md).
+ */
+const SIZE_CM: Record<string, string> = {
+  "2x3": "5.1 × 7.6",
+  "3x5": "7.6 × 12.7",
+  "4x6": "10.2 × 15.2",
+  "5x7": "12.7 × 17.8",
+  "6x8": "15.2 × 20.3",
+  "8x10": "20.3 × 25.4",
+  "8x12": "20.3 × 30.5",
+};
+
+/** Extra line on a size's photo screen; a reminder only, online prices stay the same. */
+const SIZE_NOTE: Record<string, string> = {
+  "4x6": "自排證件照一張 $25，線上照一般價計算，到店再調整",
 };
 
 export function OrderForm({
@@ -85,11 +108,7 @@ export function OrderForm({
   const paymentMethods = (Object.keys(PAYMENT_LABEL) as PaymentMethod[]).filter(
     (m) => cashAllowed || m !== "cash_on_pickup",
   );
-  // ID-photo set new uploads start with; each photo can switch to another
-  const [idSetId, setIdSetId] = useState(
-    () => draft?.idPhotos[0]?.productId ?? catalog.idPhotoSets[0]?.id,
-  );
-  const uploader = usePhotoUploader(draft, catalog.sizes[0]?.id ?? 0, idSetId);
+  const uploader = usePhotoUploader(draft, catalog.sizes[0]?.id ?? 0);
   const { groups, entries, notices } = uploader;
 
   // The size list doubles as the overview, so a resumed draft starts there too
@@ -113,7 +132,7 @@ export function OrderForm({
   }
 
   const sizeById = new Map(catalog.sizes.map((s) => [s.id, s]));
-  const groupLines = groups.map((g, i) => {
+  const listedLines = groups.map((g, i) => {
     const size = sizeById.get(g.printSizeId);
     const photos = entries.filter((e) => e.bucket === g.key);
     const unitPrice = size?.price ?? 0;
@@ -142,25 +161,31 @@ export function OrderForm({
   });
   // 低消 counts every size together
   const prints = printCharges(
-    groupLines.map((g) => ({
+    listedLines.map((g) => ({
       unitPrice: g.unitPrice,
       laminationUnitPrice: g.laminationUnitPrice,
       laminatedPrints: g.laminatedPrints,
       quantities: [g.prints],
     })),
   );
-  const minimumLines = [
-    prints.printingTopUp > 0 && {
-      key: "printing",
-      label: `洗照片未滿 ${fmt(MIN_CHARGE)}，補差額`,
-      amount: prints.printingTopUp,
-    },
-    prints.laminationTopUp > 0 && {
-      key: "lamination",
-      label: `護貝未滿 ${fmt(MIN_CHARGE)}，補差額`,
-      amount: prints.laminationTopUp,
-    },
-  ].filter((l) => l !== false);
+  // Customers never see a separate top-up: it goes into the first size that
+  // prints (or laminates), so the lines still add up to the total
+  const printingTopUpAt = listedLines.findIndex((g) => g.prints > 0);
+  const laminationTopUpAt = listedLines.findIndex((g) => g.laminatedPrints > 0);
+  const groupLines = listedLines.map((g, i) => {
+    const printing =
+      g.printing + (i === printingTopUpAt ? prints.printingTopUp : 0);
+    const lamination =
+      g.lamination + (i === laminationTopUpAt ? prints.laminationTopUp : 0);
+    return {
+      ...g,
+      printing,
+      lamination,
+      total: printing + lamination,
+      printingAtMinimum: printing > g.printing,
+      laminationAtMinimum: lamination > g.lamination,
+    };
+  });
   const idPhotoEntries = entries.filter((e) => e.bucket === ID_PHOTO_BUCKET);
   const idPhotoLines = catalog.idPhotoSets
     .map((set) => {
@@ -171,6 +196,8 @@ export function OrderForm({
         ...set,
         sets,
         removals,
+        // 價格另議 (e.g. 證件照：其他): priced by the shop after the order
+        quoted: set.price === 0,
         subtotal: photos.reduce(
           (sum, e) =>
             sum +
@@ -186,6 +213,8 @@ export function OrderForm({
       };
     })
     .filter((l) => l.sets > 0);
+  // New ID photos start without a set; the customer picks one per photo
+  const unsetIdPhotos = idPhotoEntries.filter((e) => e.productId === undefined);
   const itemLines = catalog.addons
     .filter((p) => (itemQty[p.id] ?? 0) > 0)
     .map((p) => ({
@@ -210,6 +239,8 @@ export function OrderForm({
     if (!hasContent) return "還沒有加入任何照片";
     if (notReady)
       return `還有 ${notReady} 張照片沒有上傳完成，請點進去重傳失敗的照片或移除`;
+    if (unsetIdPhotos.length)
+      return `還有 ${unsetIdPhotos.length} 張證件照沒選尺寸，請點進去選好`;
   }
 
   function validate(): FieldErrors {
@@ -242,12 +273,11 @@ export function OrderForm({
     el.focus({ preventScroll: true });
   }
 
-  function pickIdSet(productId: number) {
-    setIdSetId(productId);
-    uploader.setIdPhotoSet(
-      idPhotoEntries.map((e) => e.localId),
-      productId,
-    );
+  /** 全部刪除: back to an empty order, photos and all. */
+  function clearOrder() {
+    setItemQty({});
+    setCustomNote("");
+    void uploader.clearAll().catch(() => undefined);
   }
 
   /** Open the size's group if it has one, else reuse an empty group or start a new one. */
@@ -319,6 +349,7 @@ export function OrderForm({
         desc: [
           `${g.photos.length} 張照片`,
           g.laminatedPrints > 0 && `護貝 ${g.laminatedPrints} 張`,
+          (g.printingAtMinimum || g.laminationAtMinimum) && "含最低收費",
         ]
           .filter(Boolean)
           .join("・"),
@@ -335,9 +366,21 @@ export function OrderForm({
       ]
         .filter(Boolean)
         .join("・"),
-      amount: fmt(l.subtotal),
+      amount: l.quoted ? withQuote(l.subtotal) : fmt(l.subtotal),
       view: { kind: "id_photo" } as const,
     })),
+    ...(unsetIdPhotos.length
+      ? [
+          {
+            key: "id-unset",
+            photos: unsetIdPhotos,
+            title: `證件照 ${unsetIdPhotos.length} 張`,
+            amount: "",
+            issue: "還沒選尺寸，點這裡選",
+            view: { kind: "id_photo" } as const,
+          },
+        ]
+      : []),
     ...(customEntries.length > 0 || customNote
       ? [
           {
@@ -347,12 +390,17 @@ export function OrderForm({
             desc: customEntries.length
               ? `${customEntries.length} 張照片`
               : undefined,
-            amount: "另外報價",
+            amount: QUOTED,
             view: { kind: "custom" } as const,
           },
         ]
       : []),
   ];
+  // 價格另議 items (ID photo 其他, custom work) aren't in the total
+  const hasQuoted =
+    idPhotoLines.some((l) => l.quoted) ||
+    customEntries.length > 0 ||
+    !!customNote;
   const idSets = idPhotoLines.reduce((n, l) => n + l.sets, 0);
   const orderCaption = [
     prints.prints > 0 && `照片 ${prints.prints} 張`,
@@ -395,27 +443,6 @@ export function OrderForm({
             )}
           </div>
 
-          {orderLines.length > 0 && (
-            <section className="grid gap-2.5 lg:hidden">
-              <h2 className={h2Class}>已經選的</h2>
-              <ul className="border-line bg-card divide-subtle grid divide-y overflow-hidden rounded-2xl border">
-                {orderLines.map((l) => (
-                  <OrderLineRow
-                    key={l.key}
-                    line={l}
-                    onClick={() => go(l.view)}
-                  />
-                ))}
-                {minimumLines.map((l) => (
-                  <MinimumLineRow key={l.key} line={l} className="px-3.5" />
-                ))}
-              </ul>
-              <p className="text-muted text-[15px]">
-                點一行可以加減照片或張數。
-              </p>
-            </section>
-          )}
-
           <section className="grid gap-2.5">
             {hasContent && <h2 className={h2Class}>再洗別的尺寸</h2>}
             {minimumNote && (
@@ -456,7 +483,32 @@ export function OrderForm({
                 );
               })}
             </div>
+            <SizeChart sizes={catalog.sizes} />
           </section>
+
+          {/* Below the sizes, so coming back from a size shows them first */}
+          {orderLines.length > 0 && (
+            <section className="grid gap-2.5 lg:hidden">
+              <div className="flex flex-wrap items-center justify-between gap-x-4">
+                <h2 className={h2Class}>已經選的</h2>
+                <span className="text-muted text-base">
+                  <RemoveAll label="全部刪除" onConfirm={clearOrder} />
+                </span>
+              </div>
+              <ul className="border-line bg-card divide-subtle grid divide-y overflow-hidden rounded-2xl border">
+                {orderLines.map((l) => (
+                  <OrderLineRow
+                    key={l.key}
+                    line={l}
+                    onClick={() => go(l.view)}
+                  />
+                ))}
+              </ul>
+              <p className="text-muted text-[15px]">
+                點一行可以加減照片或張數。
+              </p>
+            </section>
+          )}
 
           <section className="grid gap-2.5">
             <h2 className={h2Class}>其他</h2>
@@ -505,7 +557,14 @@ export function OrderForm({
         </div>
 
         <aside className="border-line bg-card sticky top-6 hidden gap-1 rounded-2xl border p-5 lg:grid">
-          <h2 className={h2Class}>你的訂單</h2>
+          <div className="flex flex-wrap items-center justify-between gap-x-4">
+            <h2 className={h2Class}>你的訂單</h2>
+            {hasContent && (
+              <span className="text-muted text-base">
+                <RemoveAll label="全部刪除" onConfirm={clearOrder} />
+              </span>
+            )}
+          </div>
           {orderLines.length === 0 && itemLines.length === 0 ? (
             <p className="text-muted py-3 text-base">
               還沒選照片，先點左邊的尺寸。
@@ -522,9 +581,6 @@ export function OrderForm({
               ))}
               {itemLines.map((p) => (
                 <ItemLineRow key={p.id} item={p} />
-              ))}
-              {minimumLines.map((l) => (
-                <MinimumLineRow key={l.key} line={l} />
               ))}
             </ul>
           )}
@@ -554,9 +610,9 @@ export function OrderForm({
   // ---- 一個尺寸的照片 ----
   if (screen === "group" && currentGroup) {
     const g = currentGroup;
-    // Prints of this size that still fit under the order's 低消
+    // Prints of this size that still fit under the 低消 it carries
     const extra = g.unitPrice
-      ? Math.floor(prints.printingTopUp / g.unitPrice)
+      ? Math.floor((g.printing - g.unitPrice * g.prints) / g.unitPrice)
       : 0;
     const hasPhotos = g.photos.length > 0;
     return (
@@ -574,6 +630,7 @@ export function OrderForm({
           ]
             .filter(Boolean)
             .join("・")}
+          note={SIZE_NOTE[g.sizeCode]}
         />
 
         <PhotoBucket
@@ -586,20 +643,19 @@ export function OrderForm({
           onRemoveAll={() => void uploader.removeGroup(g.key)}
         />
 
-        {hasPhotos &&
-          (prints.printingTopUp > 0 || prints.laminationTopUp > 0) && (
-            <p className="bg-brand-tint text-brand-dark grid gap-0.5 rounded-[14px] px-4 py-3 text-[15px] font-bold">
-              {prints.printingTopUp > 0 && (
-                <span>
-                  整筆訂單洗照片最少收 {fmt(MIN_CHARGE)}
-                  {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
-                </span>
-              )}
-              {prints.laminationTopUp > 0 && (
-                <span>整筆訂單護貝最少收 {fmt(MIN_CHARGE)}。</span>
-              )}
-            </p>
-          )}
+        {(g.printingAtMinimum || g.laminationAtMinimum) && (
+          <p className="bg-brand-tint text-brand-dark grid gap-0.5 rounded-[14px] px-4 py-3 text-[15px] font-bold">
+            {g.printingAtMinimum && (
+              <span>
+                洗照片最少收 {fmt(g.printing)}
+                {extra > 0 && `，再多洗 ${extra} 張不加錢`}。
+              </span>
+            )}
+            {g.laminationAtMinimum && (
+              <span>護貝最少收 {fmt(g.lamination)}。</span>
+            )}
+          </p>
+        )}
 
         <BottomBar
           caption={`${g.sizeLabel} 共 ${g.prints} 張${
@@ -619,12 +675,7 @@ export function OrderForm({
   // ---- 證件照 ----
   if (screen === "id_photo") {
     const hasPhotos = idPhotoEntries.length > 0;
-    // The set every photo shares (or the one new photos get); none when they differ
-    const sharedIdSet = hasPhotos
-      ? idPhotoEntries.every((e) => e.productId === idPhotoEntries[0].productId)
-        ? idPhotoEntries[0].productId
-        : undefined
-      : idSetId;
+    const idTotal = idPhotoLines.reduce((s, l) => s + l.subtotal, 0);
     return (
       <div className={`${narrowClass} gap-4`}>
         <StepHeader
@@ -637,31 +688,12 @@ export function OrderForm({
           price={`一組 $${catalog.idPhotoSets[0]?.price ?? 0}`}
         />
 
-        <div className="grid gap-1">
-          <h2 className={h2Class}>
-            {idPhotoEntries.length > 1 ? "全部改成哪一種？" : "要哪一種？"}
-          </h2>
-          <p className="text-muted text-[15px]">
-            每張照片可以選不同種，在照片下面改。
-          </p>
-        </div>
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          {catalog.idPhotoSets.map((set) => (
-            <ChoiceCard
-              key={set.id}
-              name="idPhotoSet"
-              checked={set.id === sharedIdSet}
-              onSelect={() => pickIdSet(set.id)}
-              title={set.name.replace(/^證件照：/, "")}
-              desc={set.description?.split("、").slice(0, 2).join("、")}
-            />
-          ))}
-        </div>
+        <IdPhotoGuide />
 
         <div className="mt-2 grid gap-1">
           <h2 className={h2Class}>照片和組數</h2>
           <p className="text-muted text-[15px]">
-            要去背的照片，在照片下面勾「去背」，每張加 $
+            放好照片後，在每張照片下面選尺寸或組合。要去背的勾「去背」，每張加 $
             {BACKGROUND_REMOVAL_PRICE}。
           </p>
         </div>
@@ -671,16 +703,22 @@ export function OrderForm({
           notices={notices.filter((n) => n.bucket === ID_PHOTO_BUCKET)}
           uploader={uploader}
           quantityUnit="組"
-          idPhotoSets={catalog.idPhotoSets.map((s) => ({
-            id: s.id,
-            name: s.name.replace(/^證件照：/, ""),
-          }))}
+          idPhotoSets={idPhotoSetGroups(catalog.idPhotoSets)}
           backgroundRemovalPrice={BACKGROUND_REMOVAL_PRICE}
         />
         <BottomBar
           caption={`證件照 共 ${idSets} 組`}
-          hint={hasPhotos ? undefined : "證件照還沒放照片"}
-          amount={idPhotoLines.reduce((s, l) => s + l.subtotal, 0)}
+          hint={
+            !hasPhotos
+              ? "證件照還沒放照片"
+              : unsetIdPhotos.length
+                ? `還有 ${unsetIdPhotos.length} 張照片沒選尺寸`
+                : undefined
+          }
+          amount={idTotal}
+          amountText={
+            idPhotoLines.some((l) => l.quoted) ? withQuote(idTotal) : undefined
+          }
         >
           <DoneButton done={hasPhotos} onClick={toPick}>
             證件照選好了
@@ -724,7 +762,7 @@ export function OrderForm({
         <BottomBar
           caption="價錢"
           hint={empty ? "放照片或寫想做什麼" : undefined}
-          amountText="另外報價"
+          amountText={QUOTED}
         >
           <DoneButton done={!empty} onClick={toPick}>
             客製化選好了
@@ -768,14 +806,13 @@ export function OrderForm({
               key={l.key}
               line={l}
               // Only rows with a failed upload lead back; everything else is edited one step back
-              onClick={uploadIssue(l.photos) ? () => go(l.view) : undefined}
+              onClick={
+                uploadIssue(l.photos) || l.issue ? () => go(l.view) : undefined
+              }
             />
           ))}
           {itemLines.map((p) => (
             <ItemLineRow key={p.id} item={p} />
-          ))}
-          {minimumLines.map((l) => (
-            <MinimumLineRow key={l.key} line={l} />
           ))}
         </ul>
         <div className="border-line flex items-baseline justify-between gap-3 border-t py-3.5">
@@ -784,6 +821,11 @@ export function OrderForm({
             {fmt(total)}
           </span>
         </div>
+        {hasQuoted && (
+          <p className="text-brand-dark -mt-1 pb-3.5 text-[15px] font-bold text-balance">
+            此訂單包含價格另議項目，實際金額請與店家聯繫
+          </p>
+        )}
       </section>
 
       <section className="grid gap-4">
@@ -938,22 +980,186 @@ const inputBase =
 const inputClass = `${inputBase} h-13.5 text-lg`;
 const textareaClass = `${inputBase} py-3 text-lg leading-normal`;
 
-/** 低消 note, shown when some size's single print or lamination costs less than the minimum. */
+/** 低消 note for the sizes whose single print or lamination costs less than the minimum. */
 function minimumChargeNote(
-  sizes: { price: number; laminationPrice: number }[],
+  sizes: { label: string; price: number; laminationPrice: number }[],
 ) {
-  const cheap = (price: number) => price > 0 && price < MIN_CHARGE;
-  const cheapPrint = sizes.some((s) => cheap(s.price));
-  const cheapLam = sizes.some((s) => cheap(s.laminationPrice));
-  if (!cheapPrint && !cheapLam) return null;
-  const min = `$${MIN_CHARGE}`;
-  const rule = cheapPrint
-    ? `整筆訂單洗照片未滿 ${min} 收 ${min}${cheapLam ? "，護貝也一樣另外算" : ""}`
-    : `整筆訂單護貝未滿 ${min} 收 ${min}`;
-  return `${rule}；不同尺寸合起來算`;
+  const cheapPrint = sizes.filter((s) => s.price < MIN_CHARGE);
+  const cheapLam = sizes.filter(
+    (s) => s.laminationPrice > 0 && s.laminationPrice < MIN_CHARGE,
+  );
+  if (!cheapPrint.length && !cheapLam.length) return null;
+  const same =
+    cheapPrint.length === cheapLam.length &&
+    cheapPrint.every((s, i) => s === cheapLam[i]);
+  const labels = (list: typeof sizes) => list.map((s) => s.label).join("、");
+  if (same)
+    return `${labels(cheapPrint)}：只洗一張或只護貝一張時，收 $${MIN_CHARGE}`;
+  return [
+    cheapPrint.length && `${labels(cheapPrint)}：只洗一張收 $${MIN_CHARGE}`,
+    cheapLam.length && `${labels(cheapLam)}：只護貝一張收 $${MIN_CHARGE}`,
+  ]
+    .filter(Boolean)
+    .join("；");
 }
 
-/** Transfer screenshot: pick, upload progress, preview, replace/remove. */
+/** Amount of something the shop prices afterwards, e.g. "$100 + 價格另議". */
+function withQuote(amount: number) {
+  return amount > 0 ? `${fmt(amount)} + ${QUOTED}` : QUOTED;
+}
+
+/** Sections of the per-photo ID set menu, by product code; any other set goes under 其他. */
+const ID_SET_GROUPS = [
+  { label: "單一尺寸", codes: ["id-2in-8", "id-2in-big-8", "id-1in-10"] },
+  {
+    label: "組合價",
+    codes: ["id-2in-big4-2in4", "id-2in-big4-1in5", "id-2in4-1in5"],
+  },
+];
+
+function idPhotoSetGroups(sets: Catalog["idPhotoSets"]) {
+  const groupOf = (code: string) =>
+    ID_SET_GROUPS.find((g) => g.codes.includes(code))?.label ?? "其他";
+  return [...ID_SET_GROUPS.map((g) => g.label), "其他"]
+    .map((label) => ({
+      label,
+      sets: sets
+        .filter((s) => groupOf(s.code) === label)
+        .map((s) => ({ id: s.id, name: s.name.replace(/^證件照：/, "") })),
+    }))
+    .filter((g) => g.sets.length > 0);
+}
+
+/**
+ * Which ID photo size suits which document, after the shop's counter sign.
+ * Figures are drawn at one scale (mm × 1.6) so the sizes compare.
+ */
+const ID_PHOTO_SIZES = [
+  {
+    name: "一般兩吋",
+    uses: "學生證、兵役體檢、履歷表、落地簽證、健保卡、國際駕照",
+    w: 35,
+    h: 45,
+    neck: [15, 22, 5, 7],
+    body: "M6 45C6 33 11 27.5 17.5 27.5C24 27.5 29 33 29 45Z",
+    head: [17.5, 17, 6, 7.5],
+  },
+  {
+    name: "大頭兩吋",
+    uses: "身分證、護照、英／泰／馬／菲簽證、外僑居留證",
+    w: 35,
+    h: 45,
+    neck: [14.5, 26, 6, 6],
+    body: "M2 45C2 37 8.5 31.5 17.5 31.5C26.5 31.5 33 37 33 45Z",
+    head: [17.5, 17, 8.5, 11.5],
+  },
+  {
+    name: "一吋",
+    uses: "駕照、殘障手冊",
+    w: 28,
+    h: 35,
+    neck: [12, 18.5, 4, 5],
+    body: "M4 35C4 27 8.5 22.5 14 22.5C19.5 22.5 24 27 24 35Z",
+    head: [14, 13.5, 5, 6.5],
+  },
+  {
+    name: "5cm×5cm",
+    uses: "美國簽證、印度簽證",
+    w: 50,
+    h: 50,
+    neck: [22, 29, 6, 6],
+    body: "M9 50C9 41 15.5 34.5 25 34.5C34.5 34.5 41 41 41 50Z",
+    head: [25, 20, 8.5, 11],
+  },
+] as const;
+
+/** 尺寸怎麼選 on the ID photo screen; closed at first so repeat customers aren't slowed down. */
+function IdPhotoGuide() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="border-line bg-card rounded-2xl border">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls="id-photo-guide"
+        className="hover:bg-brand-tint flex min-h-16 w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-left"
+      >
+        <span className="bg-brand-tint text-brand-dark grid size-10 shrink-0 place-items-center rounded-xl">
+          <InfoIcon className="size-5.5" />
+        </span>
+        <span className="grid min-w-0 flex-1 gap-0.5">
+          <span className="text-lg font-bold">尺寸怎麼選</span>
+          <span className="text-muted text-[15px]">看要辦什麼證件</span>
+        </span>
+        <span className="text-brand-dark flex shrink-0 items-center gap-0.5 text-[15px] font-bold">
+          {open ? "收起" : "展開"}
+          <ChevronDownIcon
+            className={`size-5 transition-transform motion-reduce:transition-none ${
+              open ? "rotate-180" : ""
+            }`}
+          />
+        </span>
+      </button>
+      <div
+        id="id-photo-guide"
+        hidden={!open}
+        className="border-subtle grid gap-2.5 border-t px-3.5 pt-3 pb-3.5"
+      >
+        <p className="text-muted text-[15px]">
+          一般和大頭兩吋的照片一樣大，大頭的臉拍得比較大。
+        </p>
+        <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {ID_PHOTO_SIZES.map((s) => (
+            <li
+              key={s.name}
+              className="border-line grid content-start gap-2 rounded-[14px] border p-2.5"
+            >
+              <span className="bg-brand-tint grid h-24 place-items-center rounded-[10px]">
+                <svg
+                  aria-hidden="true"
+                  width={s.w * 1.6}
+                  height={s.h * 1.6}
+                  viewBox={`0 0 ${s.w} ${s.h}`}
+                >
+                  <rect
+                    x="0.3"
+                    y="0.3"
+                    width={s.w - 0.6}
+                    height={s.h - 0.6}
+                    strokeWidth="0.6"
+                    className="fill-card stroke-field"
+                  />
+                  <g className="fill-field">
+                    <rect
+                      x={s.neck[0]}
+                      y={s.neck[1]}
+                      width={s.neck[2]}
+                      height={s.neck[3]}
+                    />
+                    <path d={s.body} />
+                    <ellipse
+                      cx={s.head[0]}
+                      cy={s.head[1]}
+                      rx={s.head[2]}
+                      ry={s.head[3]}
+                    />
+                  </g>
+                </svg>
+              </span>
+              <h3 className="text-[17px] font-bold">{s.name}</h3>
+              <p className="text-muted text-[15px]">{s.uses}</p>
+            </li>
+          ))}
+        </ul>
+        <p className="text-muted text-[15px]">
+          一張照片想洗兩種尺寸，選單裡有「組合價」；特殊尺寸或要修圖，選「其他」，店家另外報價。
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /** Shown on a checkout row whose photos still need a retry or removal. */
 function uploadIssue(photos: Entry[]) {
   const bad = photos.filter(
@@ -1030,10 +1236,13 @@ function ContextBanner({
   icon,
   label,
   price,
+  note,
 }: {
   icon: React.ReactNode;
   label: string;
   price: string;
+  /** One more line under the price, e.g. 4×6's 自排證件照 */
+  note?: string;
 }) {
   return (
     <div className="border-brand bg-brand-tint flex items-center gap-3.5 rounded-2xl border-2 px-4 py-3.5">
@@ -1044,8 +1253,64 @@ function ContextBanner({
         </span>
         <h1 className={h1Class}>{label}</h1>
         <span className="text-muted text-[15px]">{price}</span>
+        {note && (
+          <span className="text-brand-dark text-[15px] font-bold">{note}</span>
+        )}
       </div>
     </div>
+  );
+}
+
+/** 「各尺寸是幾公分？」 under the size buttons: opens a table of each size in cm. */
+function SizeChart({ sizes }: { sizes: Catalog["sizes"] }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => dialog.current?.showModal()}
+        className="text-brand-dark flex min-h-11 items-center justify-self-start text-base font-bold underline underline-offset-4"
+      >
+        各尺寸是幾公分？
+      </button>
+      <dialog
+        ref={dialog}
+        onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
+        aria-labelledby="size-chart-title"
+        className="bg-card text-foreground backdrop:bg-foreground/60 m-auto w-[calc(100%-40px)] max-w-sm rounded-[20px] p-0 shadow-2xl"
+      >
+        <div className="grid gap-4 px-5 pt-6 pb-5">
+          <h2 id="size-chart-title" className={h2Class}>
+            各尺寸是幾公分？
+          </h2>
+          <table className="w-full text-left text-[17px]">
+            <thead className="text-muted text-[15px]">
+              <tr>
+                <th className="pb-2 font-bold">尺寸</th>
+                <th className="pb-2 font-bold">公分（寬 × 高）</th>
+              </tr>
+            </thead>
+            <tbody className="divide-subtle border-subtle divide-y border-t">
+              {sizes.map((s) => (
+                <tr key={s.id}>
+                  <td className="py-2.5 font-bold">{s.label}</td>
+                  <td className="py-2.5 tabular-nums">
+                    {SIZE_CM[s.code] ?? "請洽店家"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button
+            type="button"
+            onClick={() => dialog.current?.close()}
+            className="border-brand text-brand-dark bg-card h-13.5 rounded-[14px] border-2 text-lg font-bold"
+          >
+            知道了
+          </button>
+        </div>
+      </dialog>
+    </>
   );
 }
 
@@ -1055,6 +1320,8 @@ type OrderLine = {
   title: string;
   desc?: string;
   amount: string;
+  /** Something the customer still has to do on this line before checkout. */
+  issue?: string;
   view: View;
 };
 
@@ -1071,7 +1338,7 @@ function OrderLineRow({
   flush?: boolean;
 }) {
   const thumbs = line.photos.filter((p) => p.previewUrl).slice(0, 3);
-  const issue = uploadIssue(line.photos);
+  const issue = uploadIssue(line.photos) ?? line.issue;
   const body = (
     <>
       <span className="flex w-20 shrink-0">
@@ -1135,26 +1402,6 @@ function ItemLineRow({
       </span>
       <span className="text-[17px] font-bold tabular-nums">
         {fmt(item.subtotal)}
-      </span>
-    </li>
-  );
-}
-
-/** 低消 top-up for the whole order's printing or lamination. */
-function MinimumLineRow({
-  line,
-  className = "",
-}: {
-  line: { label: string; amount: number };
-  className?: string;
-}) {
-  return (
-    <li
-      className={`flex min-h-14 items-center justify-between gap-3 py-3 ${className}`}
-    >
-      <span className="text-muted text-base">{line.label}</span>
-      <span className="text-[17px] font-bold tabular-nums">
-        {fmt(line.amount)}
       </span>
     </li>
   );
