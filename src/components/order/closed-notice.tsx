@@ -9,8 +9,6 @@ import {
   type NoticeCell,
 } from "@/lib/shop-days";
 
-const SEEN_KEY = "closed-notice-seen";
-
 const CELL_TONE: Record<NoticeCell["tone"], string> = {
   today: "border-foreground bg-card",
   todayClosed: "border-foreground bg-subtle",
@@ -20,7 +18,7 @@ const CELL_TONE: Record<NoticeCell["tone"], string> = {
 
 /**
  * Pops up on the order page on a closed day or the day before one, telling
- * when today's orders will be handled. Shown once a day per browser.
+ * when today's orders will be handled. Shown on every visit that day.
  */
 export function ClosedNoticeDialog({ notice }: { notice: ClosedNotice }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -28,24 +26,12 @@ export function ClosedNoticeDialog({ notice }: { notice: ClosedNotice }) {
   const columns = cells.reduce((n, c) => n + (c.wide ? 2 : 1), 0);
 
   useEffect(() => {
-    try {
-      if (localStorage.getItem(SEEN_KEY) === notice.today) return;
-    } catch {
-      // Storage blocked: show it every visit, which is harmless
-    }
     dialog.current?.showModal();
-  }, [notice.today]);
-
-  function remember() {
-    try {
-      localStorage.setItem(SEEN_KEY, notice.today);
-    } catch {}
-  }
+  }, []);
 
   return (
     <dialog
       ref={dialog}
-      onClose={remember}
       onClick={(e) => e.target === e.currentTarget && dialog.current?.close()}
       aria-labelledby="closed-notice-title"
       aria-describedby="closed-notice-desc"
